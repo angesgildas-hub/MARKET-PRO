@@ -185,7 +185,7 @@ async function startServer() {
     let text = "";
 
     if (type === "store_requested") {
-      to = "anges.gildas@gmail.com";
+      to = "ange.gildas@gmail.com, anges.gildas@gmail.com";
       subject = `[Market Pro] Nouvelle demande de création de boutique : ${data.storeName}`;
       text = `Bonjour Admin,
 
