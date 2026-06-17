@@ -53,6 +53,7 @@ import Register from './components/Register';
 import MobileMoney from './components/MobileMoney';
 import Commandes from './components/Commandes';
 import Chat from './components/Chat';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 import { translations, Language } from './lib/translations';
 import { UserRole, StoreSettings, Client, UserProfile, Product } from './types';
 
@@ -1490,6 +1491,9 @@ export default function App() {
             hasPermission={hasPermission}
           />
         </Router>
+
+        {/* Custom PWA Install prompt and handler */}
+        <PWAInstallPrompt />
 
       {/* Global Password Verification Modal */}
       <AnimatePresence>
