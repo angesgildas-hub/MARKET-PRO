@@ -14,7 +14,8 @@ import {
   CheckCircle2, 
   Loader2,
   ShieldCheck,
-  SmartphoneNfc
+  SmartphoneNfc,
+  AlertTriangle
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import LegalDocsModal from './LegalDocsModal';
@@ -116,6 +117,8 @@ export default function Register() {
   const [isLegalOpen, setIsLegalOpen] = useState(false);
   const [legalTab, setLegalTab] = useState<'cgu' | 'privacy'>('cgu');
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [emailStatus, setEmailStatus] = useState<{ success: boolean; error?: string; details?: string } | null>(null);
   const navigate = useNavigate();
 
   // Form State
@@ -166,8 +169,9 @@ export default function Register() {
   const currentCountry = countries.find(c => c.code === formData.country);
 
   const handleSubmit = async () => {
+    setError(null);
     if (!termsAccepted) {
-      alert("Veuillez accepter les Conditions d'Utilisation et la Politique de Confidentialité régies au Togo avant de poursuivre l'inscription.");
+      setError("Veuillez accepter les Conditions d'Utilisation et la Politique de Confidentialité régies au Togo avant de poursuivre l'inscription.");
       return;
     }
     setLoading(true);
@@ -246,7 +250,7 @@ export default function Register() {
 
       // 4. Send email notification to Super Admin
       try {
-        await fetch('/api/send-email', {
+        const emailRes = await fetch('/api/send-email', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -262,17 +266,46 @@ export default function Register() {
             }
           })
         });
-        console.log("Super Admin notification email request sent.");
-      } catch (emailErr) {
+        const emailData = await emailRes.json();
+        if (emailData.success) {
+          console.log("Super Admin notification email request sent successfully:", emailData.messageId);
+          setEmailStatus({ success: true });
+        } else {
+          console.error("Super Admin notification email request reported failure:", emailData.error, emailData.details);
+          setEmailStatus({ 
+            success: false, 
+            error: emailData.error || "Échec d'envoi", 
+            details: emailData.details || "Erreur inconnue" 
+          });
+        }
+      } catch (emailErr: any) {
         console.error("Failed to call send-email api:", emailErr);
+        setEmailStatus({ 
+          success: false, 
+          error: "Erreur de connexion serveur email", 
+          details: emailErr.message || String(emailErr)
+        });
       }
 
       // 5. Sign out
       await signOut(auth);
       setSuccess(true);
-    } catch (error: any) {
-      console.error("Registration error:", error);
-      alert(error.message || "Une erreur est survenue lors de la création de votre compte.");
+    } catch (err: any) {
+      console.error("Registration error:", err);
+      let message = "Une erreur est survenue lors de la création de votre compte.";
+      
+      const errStr = (err?.code || err?.message || "").toLowerCase();
+      if (errStr.includes("email-already-in-use")) {
+        message = "Cette adresse e-mail est déjà utilisée par une autre boutique sur Market Pro. Veuillez utiliser une autre adresse e-mail ou vous connecter.";
+      } else if (errStr.includes("invalid-email")) {
+        message = "L'adresse e-mail saisie n'est pas valide. Veuillez vérifier son format.";
+      } else if (errStr.includes("weak-password")) {
+        message = "Le mot de passe choisi est trop simple. Veuillez utiliser au moins 6 caractères.";
+      } else if (err?.message) {
+        message = err.message;
+      }
+      
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -304,6 +337,39 @@ export default function Register() {
               <p className="text-slate-900 font-black text-sm">{subdomain}</p>
               <p className="text-[10px] text-slate-400 mt-1">Vous pourrez y accéder dès activation.</p>
             </div>
+
+            {emailStatus && (
+              <div className="text-left mt-4">
+                {emailStatus.success ? (
+                  <div className="p-4 bg-emerald-50 rounded-3xl border border-emerald-100/70 text-emerald-950 text-xs flex items-center gap-3">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 shadow-sm shadow-emerald-400" />
+                    <p className="font-bold text-emerald-700">
+                      Notification par courriel transmise avec succès au Super Admin !
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-5 bg-rose-50 rounded-3xl border border-rose-100/80 text-rose-950 text-xs space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                      <p className="font-black text-rose-800 uppercase tracking-wider text-[9px]">
+                        Alerte : Notification courriel bloquée par SMTP
+                      </p>
+                    </div>
+                    <p className="font-medium text-rose-700 leading-relaxed">
+                      L'inscription est finalisée, mais l'envoi de la notification par e-mail a échoué : <span className="font-black underline">{emailStatus.error}</span>.
+                    </p>
+                    {emailStatus.details && (
+                      <div className="bg-rose-100/40 p-2.5 rounded-xl text-[10px] font-mono text-rose-600 border border-rose-100 break-all leading-normal">
+                        Détail technique : {emailStatus.details}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-rose-700/80 font-medium">
+                      💡 Remède : Vérifiez que les clés SMTP_USER et SMTP_PASS (mot de passe d'application Google à 16 caractères) saisies dans les variables d'environnement sont correctes et à jour.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <Link 
             to="/" 
@@ -338,6 +404,30 @@ export default function Register() {
               <h1 className="text-4xl font-black text-slate-900 mb-2 italic tracking-tight uppercase">Configuration</h1>
               <p className="text-slate-400 font-bold text-[9px] uppercase tracking-[0.4em]">Propulsez votre boutique physique</p>
             </div>
+
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0, y: -10 }}
+                  animate={{ opacity: 1, height: 'auto', y: 0 }}
+                  exit={{ opacity: 0, height: 0, y: -10 }}
+                  className="mb-8 p-5 bg-rose-50 border border-rose-100 rounded-3xl flex items-start gap-4 text-xs text-rose-800 font-medium overflow-hidden shadow-sm"
+                >
+                  <AlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={16} />
+                  <div className="flex-1">
+                    <p className="font-extrabold text-[10px] uppercase tracking-wider text-rose-900 mb-1">Attention</p>
+                    <p className="leading-relaxed text-rose-700">{error}</p>
+                  </div>
+                  <button
+                    onClick={() => setError(null)}
+                    type="button"
+                    className="text-rose-400 hover:text-rose-600 font-bold px-1.5 py-0.5 rounded-lg hover:bg-rose-100 transition-colors"
+                  >
+                    ✕
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             <div>
               {step === 1 ? (
@@ -424,9 +514,10 @@ export default function Register() {
                   <button 
                     onClick={() => {
                       if (!formData.storeName || !formData.email || !formData.password || !formData.displayName) {
-                        alert("Veuillez remplir tous les champs obligatoires.");
+                        setError("Veuillez remplir tous les champs obligatoires (Nom de la boutique, Nom complet, Email et Mot de passe).");
                         return;
                       }
+                      setError(null);
                       setStep(2);
                     }}
                     className="w-full py-3.5 bg-orange-600 text-white rounded-xl font-black uppercase tracking-[0.2em] text-[10px] hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 flex items-center justify-center gap-3 group"

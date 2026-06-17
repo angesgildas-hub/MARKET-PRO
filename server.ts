@@ -3,6 +3,74 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import nodemailer from "nodemailer";
+import dotenv from "dotenv";
+
+// Load environment variables from .env and fallback to .env.example
+dotenv.config();
+dotenv.config({ path: path.join(process.cwd(), ".env.example") });
+
+// Custom environment file loader to handle caching, quotes, and manual changes bypasses
+function loadEmailCredentials() {
+  const env: Record<string, string> = {};
+
+  const parseFile = (filePath: string) => {
+    if (fs.existsSync(filePath)) {
+      try {
+        const content = fs.readFileSync(filePath, "utf-8");
+        const lines = content.split(/\r?\n/);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith("#")) continue;
+          const eqIndex = trimmed.indexOf("=");
+          if (eqIndex === -1) continue;
+          const key = trimmed.substring(0, eqIndex).trim();
+          const val = trimmed.substring(eqIndex + 1).trim();
+          const cleanedVal = val.replace(/^['"]|['"]$/g, "").trim();
+          if (key) {
+            env[key] = cleanedVal;
+          }
+        }
+      } catch (e) {
+        console.error(`[Env Loader] Error reading ${filePath}:`, e);
+      }
+    }
+  };
+
+  // 1. Read .env.example as base configuration
+  parseFile(path.join(process.cwd(), ".env.example"));
+
+  // 2. Read .env (if present) to override base configuration
+  parseFile(path.join(process.cwd(), ".env"));
+
+  const getVal = (key: string, defaultValue: string = ""): string => {
+    const fileVal = env[key];
+    if (fileVal) {
+      const lower = fileVal.toLowerCase();
+      // Only use if it is not the default placeholder
+      if (lower !== "your-email@gmail.com" && lower !== "your-smtp-app-password" && fileVal.trim() !== "") {
+        return fileVal;
+      }
+    }
+    const processVal = process.env[key];
+    if (processVal) {
+      const cleaned = processVal.trim().replace(/^['"]|['"]$/g, "").trim();
+      if (cleaned !== "" && !cleaned.toLowerCase().includes("your-email") && !cleaned.toLowerCase().includes("your-smtp")) {
+        return cleaned;
+      }
+    }
+    return defaultValue;
+  };
+
+  return {
+    host: getVal("SMTP_HOST", "smtp.gmail.com"),
+    port: parseInt(getVal("SMTP_PORT", "587"), 10),
+    secure: getVal("SMTP_SECURE", "false") === "true",
+    user: getVal("SMTP_USER"),
+    pass: getVal("SMTP_PASS"),
+    from: getVal("SMTP_FROM") || `"Market Pro" <noreply@marketpro.com>`,
+    appUrl: getVal("APP_URL", "https://marketpro.com")
+  };
+}
 
 // Helper to retrieve the database ID dynamically from firebase-applet-config.json
 function getFirebaseConfig() {
@@ -168,15 +236,23 @@ async function startServer() {
   app.post("/api/send-email", async (req, res) => {
     const { type, data } = req.body;
 
-    const smtpHost = process.env.SMTP_HOST || "";
-    const smtpPort = parseInt(process.env.SMTP_PORT || "587", 10);
-    const smtpSecure = process.env.SMTP_SECURE === "true";
-    const smtpUser = process.env.SMTP_USER || "";
-    const smtpPass = process.env.SMTP_PASS || "";
-    const smtpFrom = process.env.SMTP_FROM || `"Market Pro" <noreply@marketpro.com>`;
-    const appUrl = process.env.APP_URL || "https://marketpro.com";
+    const creds = loadEmailCredentials();
+    const smtpHost = creds.host;
+    const smtpPort = creds.port;
+    const smtpSecure = creds.secure;
+    const smtpUser = creds.user;
+    const smtpPass = creds.pass;
+    const appUrl = creds.appUrl;
 
-    console.log(`[Email Service] Received request to send email of type "${type}"`);
+    // For maximal deliverability, align SMTP From with SMTP User.
+    // If we use third party from values with Gmail SMTP, Google often rejects or blocks the mail.
+    let smtpFrom = creds.from;
+    if (smtpUser && smtpUser.includes("@")) {
+      smtpFrom = `"Market Pro" <${smtpUser}>`;
+    }
+
+    const maskedPass = smtpPass ? `${smtpPass.slice(0, 3)}...${smtpPass.slice(-3)}` : "None";
+    console.log(`[Email Service] Received request to send email of type "${type}". Using user: ${smtpUser} via host: ${smtpHost}:${smtpPort} (Pass: ${maskedPass}, From: ${smtpFrom})`);
 
     // Let's build the email parameters
     let to = "";
@@ -285,18 +361,40 @@ Text: ${text}`);
     }
 
     try {
-      const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpSecure,
-        auth: {
-          user: smtpUser,
-          pass: smtpPass
-        },
-        connectionTimeout: 5000,
-        greetingTimeout: 5000,
-        socketTimeout: 5000
-      });
+      let oauthOpts: any;
+      const isGmail = smtpHost === "smtp.gmail.com" || 
+                      (smtpUser && smtpUser.endsWith("@gmail.com")) || 
+                      (smtpHost && smtpHost.toLowerCase().includes("gmail"));
+
+      if (isGmail) {
+        console.log(`[Email Service] Operating in Gmail Service Mode for user: ${smtpUser}`);
+        oauthOpts = {
+          service: "gmail",
+          auth: {
+            user: smtpUser,
+            pass: smtpPass
+          }
+        };
+      } else {
+        console.log(`[Email Service] Operating in Custom SMTP Mode: ${smtpHost}:${smtpPort}`);
+        oauthOpts = {
+          host: smtpHost,
+          port: smtpPort,
+          secure: smtpSecure,
+          auth: {
+            user: smtpUser,
+            pass: smtpPass
+          },
+          tls: {
+            rejectUnauthorized: false
+          },
+          connectionTimeout: 10000,
+          greetingTimeout: 10000,
+          socketTimeout: 10000
+        };
+      }
+
+      const transporter = nodemailer.createTransport(oauthOpts);
 
       const info = await transporter.sendMail({
         from: smtpFrom,
