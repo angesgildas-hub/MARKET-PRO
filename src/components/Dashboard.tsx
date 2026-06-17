@@ -222,7 +222,7 @@ export default function Dashboard() {
       doc.setFontSize(8.5);
       doc.setTextColor(226, 232, 240); // slate-200
       doc.text("RAPPORT COMPTABLE ET D'ACTIVITÉ DU COMPTOIR", 14, 23);
-      doc.text(`Propulsé par G-TECH LAB • Lomé, Togo`, 14, 27);
+      doc.text(`Propulsé par G-LAB TECH • Lomé, Togo`, 14, 27);
 
       // Metadata Info Box
       doc.setFont('helvetica', 'bold');

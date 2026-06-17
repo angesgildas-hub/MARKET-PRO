@@ -279,7 +279,7 @@ export default function LandingPage() {
       </section>
 
       {/* Testimonials Section */}
-      <section className="py-24 px-6 lg:px-12 bg-white rounded-t-[64px] border-t border-gray-100">
+      <section className="py-16 px-6 lg:px-12 bg-white rounded-t-[64px] border-t border-gray-100">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col lg:flex-row gap-16 items-start">
             <div className="lg:w-1/3">
@@ -324,7 +324,7 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="mt-24 pt-24 border-t border-gray-100 flex flex-wrap items-center justify-center gap-12 lg:gap-24 opacity-30 grayscale pointer-events-none">
+          <div className="mt-12 pt-12 border-t border-gray-100 flex flex-wrap items-center justify-center gap-12 lg:gap-24 opacity-30 grayscale pointer-events-none">
              <div className="text-3xl font-black tracking-tighter text-slate-900 border-2 border-slate-900 px-4 py-1">GLOBEX</div>
              <div className="text-3xl font-bold tracking-widest text-slate-900 italic font-serif">Avenue Corp</div>
              <div className="text-3xl font-black tracking-tight text-slate-900 bg-slate-900 text-white px-6 py-1 italic">Vortex</div>
@@ -334,10 +334,10 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="bg-white text-slate-900 py-20 px-6 lg:px-12 border-t border-gray-100">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-12">
+      <footer className="bg-white text-slate-900 py-12 px-6 lg:px-12 border-t border-gray-100">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
           <div>
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-gradient-to-tr from-orange-500 to-orange-400 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20 transform rotate-6 overflow-hidden">
                 {storeSettings?.logoUrl ? (
                   <img src={storeSettings.logoUrl} alt="Logo" className="w-full h-full object-cover" />
@@ -347,24 +347,24 @@ export default function LandingPage() {
               </div>
               <span className="text-xl font-black tracking-tight italic uppercase text-slate-900">{storeSettings?.name || 'MARKET PRO'}</span>
             </div>
-            <p className="text-slate-500 text-sm max-w-xs font-sans">Propulsé par G-TECH LAB. Solutions logicielles intelligentes pour l'Afrique de demain.</p>
+            <p className="text-slate-500 text-sm max-w-xs font-sans">Propulsé par G-LAB TECH. Solutions logicielles intelligentes pour l'Afrique de demain.</p>
           </div>
           
           <div className="flex gap-12">
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Produit</span>
                <a href="#" className="text-sm font-bold text-slate-700 hover:text-orange-500 transition-colors">Tarifs</a>
                <a href="#" className="text-sm font-bold text-slate-700 hover:text-orange-500 transition-colors">Support</a>
             </div>
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Légal</span>
                <button onClick={() => { setLegalTab('privacy'); setIsLegalOpen(true); }} className="text-sm font-bold text-slate-700 hover:text-orange-500 transition-colors text-left">Confidentialité</button>
                <button onClick={() => { setLegalTab('cgu'); setIsLegalOpen(true); }} className="text-sm font-bold text-slate-700 hover:text-orange-500 transition-colors text-left">CGV</button>
             </div>
           </div>
         </div>
-        <div className="max-w-7xl mx-auto mt-20 pt-8 border-t border-gray-100 text-center">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">© 2026 G-TECH LAB • TOUS DROITS RÉSERVÉS</p>
+        <div className="max-w-7xl mx-auto mt-10 pt-4 border-t border-gray-100 text-center">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">© 2026 G-LAB TECH • TOUS DROITS RÉSERVÉS</p>
         </div>
       </footer>
 

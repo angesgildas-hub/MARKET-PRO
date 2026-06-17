@@ -40,8 +40,8 @@ export default function LegalDocsModal({ isOpen, onClose, defaultTab = 'cgu' }: 
     {
       id: 'cgu-preambule',
       title: 'Préambule / Cadre Légal Autoritif',
-      content: 'Les présentes Conditions Générales d\'Utilisation (CGU) régissent l\'accès et l\'utilisation du progiciel de facturation et Point de Vente MARKET PRO, développé par G-TECH LAB. L\'accès et l\'utilisation du service sont régis par les lois et règlements applicables en République Togolaise, notamment la Loi N° 2017-007 du 22 juin 2017 relative aux transactions électroniques au Togo et la Loi N° 2019-014 relative à la protection des données à caractère personnel.',
-      tags: ['loi', 'togo', 'g-tech lab', 'introduction', 'préambule', 'cgu']
+      content: 'Les présentes Conditions Générales d\'Utilisation (CGU) régissent l\'accès et l\'utilisation du progiciel de facturation et Point de Vente MARKET PRO, développé par G-LAB TECH. L\'accès et l\'utilisation du service sont régis par les lois et règlements applicables en République Togolaise, notamment la Loi N° 2017-007 du 22 juin 2017 relative aux transactions électroniques au Togo et la Loi N° 2019-014 relative à la protection des données à caractère personnel.',
+      tags: ['loi', 'togo', 'g-lab tech', 'introduction', 'préambule', 'cgu']
     },
     {
       id: 'cgu-definition',
@@ -64,13 +64,13 @@ export default function LegalDocsModal({ isOpen, onClose, defaultTab = 'cgu' }: 
     {
       id: 'cgu-responsabilite',
       title: '4. Obligations et Limites de Responsabilité',
-      content: 'Le Client est seul responsable de l\'exactitude de ses inventaires, des taux de taxes appliqués et de la validité de ses déclarations fiscales auprès de l\'Office Togolais des Recettes (OTR). G-TECH LAB décline toute responsabilité pour les pertes d\'exploitation découlant de pannes de réseaux de télécommunication tiers ou de cas de force majeure.',
+      content: 'Le Client est seul responsable de l\'exactitude de ses inventaires, des taux de taxes appliqués et de la validité de ses déclarations fiscales auprès de l\'Office Togolais des Recettes (OTR). G-LAB TECH décline toute responsabilité pour les pertes d\'exploitation découlant de pannes de réseaux de télécommunication tiers ou de cas de force majeure.',
       tags: ['responsabilité', 'otr', 'fiscalité', 'impôts', 'limites', 'force majeure']
     },
     {
       id: 'cgu-intellectuelle',
       title: '5. Propriété Intellectuelle',
-      content: 'Tous les éléments composant l\'interface de MARKET PRO (logos, codes sources, icônes, configurations CSS, chartes graphiques) sont la propriété exclusive de G-TECH LAB, sous la protection de l\'Accord de Bangui (OAPI - Organisation Africaine de la Propriété Intellectuelle). Toute copie, décompilation ou revente sans accord écrit est strictement passible de poursuites pénales.',
+      content: 'Tous les éléments composant l\'interface de MARKET PRO (logos, codes sources, icônes, configurations CSS, chartes graphiques) sont la propriété exclusive de G-LAB TECH, sous la protection de l\'Accord de Bangui (OAPI - Organisation Africaine de la Propriété Intellectuelle). Toute copie, décompilation ou revente sans accord écrit est strictement passible de poursuites pénales.',
       tags: ['propriété intellectuelle', 'g-tech', 'oapi', 'droits', 'copie']
     },
     {
@@ -341,7 +341,7 @@ export default function LegalDocsModal({ isOpen, onClose, defaultTab = 'cgu' }: 
           <div className="pt-8 border-t border-gray-100 mt-12 text-center text-slate-400 max-w-lg mx-auto space-y-2">
             <p className="text-xs font-bold uppercase tracking-wider text-slate-600">Instance de Signature Administrative</p>
             <p className="text-[10px] font-sans leading-relaxed">
-              Fait à Lomé (Togo), pour le compte de MARKET PRO par G-TECH LAB.<br />
+              Fait à Lomé (Togo), pour le compte de MARKET PRO par G-LAB TECH.<br />
               Dernière révision légale : 07 Juin 2026.<br />
               Conforme à l'ordonnance sur la cybercriminalité et au décret d'application N°2019-014.
             </p>

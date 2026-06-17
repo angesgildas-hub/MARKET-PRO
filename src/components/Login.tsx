@@ -585,7 +585,7 @@ export default function Login() {
               <ShieldCheck size={14} className="text-[#4F8CFF]" />
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Système Core v2.4.0-PRO</span>
            </div>
-           <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">© 2026 G-TECH LAB • Tous droits réservés</p>
+           <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">© 2026 G-LAB TECH • Tous droits réservés</p>
         </div>
       </motion.div>
 

@@ -1288,7 +1288,7 @@ export default function Settings() {
  
                 <div className="pt-8 border-t border-gray-100 text-center">
                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">© 2026 {t.app_name} Solutions • Clé: {storeSettings?.licenseStatus === 'active' ? 'G-TECH-XXXX-XXXX-XXXX' : (storeSettings?.licenseKey || 'N/A')}</p>
-                   <p className="text-[9px] font-black text-orange-500 uppercase tracking-[0.2em] mt-2">SUPPORT: G-TECH LAB SOLUTION • ANGES.GILDAS@GMAIL.COM / +228 91 03 30 04</p>
+                   <p className="text-[9px] font-black text-orange-500 uppercase tracking-[0.2em] mt-2">SUPPORT: G-LAB TECH SOLUTION • ANGES.GILDAS@GMAIL.COM / +228 91 03 30 04</p>
                 </div>
               </div>
             )}
@@ -2392,7 +2392,7 @@ export default function Settings() {
                       </motion.div>
                     )}
 
-                    <p className="mt-4 text-[10px] text-gray-400 font-medium">SUPPORT: G-TECH LAB SOLUTION • ANGES.GILDAS@GMAIL.COM / +228 91 03 30 04</p>
+                    <p className="mt-4 text-[10px] text-gray-400 font-medium">SUPPORT: G-LAB TECH SOLUTION • ANGES.GILDAS@GMAIL.COM / +228 91 03 30 04</p>
                   </div>
                 </div>
               )}
