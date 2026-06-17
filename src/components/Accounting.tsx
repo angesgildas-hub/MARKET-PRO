@@ -360,15 +360,33 @@ export default function Accounting() {
           <Calendar size={18} className="text-gray-400 ml-2" />
           <input 
             type="date" 
+            max="9999-12-31"
             value={dateRange.start} 
-            onChange={e => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+            onChange={e => {
+              let val = e.target.value;
+              const parts = val.split('-');
+              if (parts[0] && parts[0].length > 4) {
+                parts[0] = parts[0].slice(0, 4);
+                val = parts.join('-');
+              }
+              setDateRange(prev => ({ ...prev, start: val }));
+            }}
             className="bg-transparent border-none text-xs font-black uppercase outline-none"
           />
           <span className="text-gray-300">/</span>
           <input 
             type="date" 
+            max="9999-12-31"
             value={dateRange.end} 
-            onChange={e => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+            onChange={e => {
+              let val = e.target.value;
+              const parts = val.split('-');
+              if (parts[0] && parts[0].length > 4) {
+                parts[0] = parts[0].slice(0, 4);
+                val = parts.join('-');
+              }
+              setDateRange(prev => ({ ...prev, end: val }));
+            }}
             className="bg-transparent border-none text-xs font-black uppercase outline-none"
           />
         </div>
@@ -567,8 +585,17 @@ export default function Accounting() {
                       <input 
                         required
                         type="date" 
+                        max="9999-12-31"
                         value={formData.date}
-                        onChange={e => setFormData({ ...formData, date: e.target.value })}
+                        onChange={e => {
+                          let val = e.target.value;
+                          const parts = val.split('-');
+                          if (parts[0] && parts[0].length > 4) {
+                            parts[0] = parts[0].slice(0, 4);
+                            val = parts.join('-');
+                          }
+                          setFormData({ ...formData, date: val });
+                        }}
                         className="w-full px-5 py-3 bg-gray-50 border border-transparent rounded-xl font-bold focus:bg-white focus:border-gray-900 focus:ring-4 focus:ring-gray-100 transition-all outline-none text-sm"
                       />
                     </div>

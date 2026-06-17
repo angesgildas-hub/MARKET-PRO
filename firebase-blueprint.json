@@ -31,6 +31,23 @@
         "licenseKey": { "type": "string" },
         "licenseExpiry": { "type": "string", "format": "date-time" },
         "licenseStatus": { "type": "string", "enum": ["active", "expired", "none"] },
+        "annexes": {
+          "type": "array",
+          "description": "Array of store branch annexes managed by the store admin, organized by zone",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "zone": { "type": "string" },
+              "address": { "type": "string" },
+              "phone": { "type": "string" },
+              "isActive": { "type": "boolean" },
+              "createdAt": { "type": "string", "format": "date-time" }
+            },
+            "required": ["id", "name", "zone"]
+          }
+        },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["name", "address", "phone"]

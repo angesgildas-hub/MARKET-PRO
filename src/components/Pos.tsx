@@ -442,9 +442,17 @@ export default function Pos() {
   const createReceiptPDF = () => {
     if (!lastSaleData) throw new Error("Aucune donnée de vente disponible");
 
+    const itemsCount = lastSaleData.items?.length || 1;
+    // Base layout: header = ~36mm
+    // AutoTable startY: 36, head cellPadding: 1, each row is about 5mm
+    // AutoTable header is about 5mm
+    const tableHeight = 5 + (itemsCount * 5);
+    const afterTableHeight = 45; // total of totals, payment details, margins
+    const calculatedHeight = Math.max(100, 36 + tableHeight + afterTableHeight);
+
     const docPDF = new jsPDF({
       unit: 'mm',
-      format: [80, 200]
+      format: [80, calculatedHeight]
     });
 
     // POS Style Header
@@ -956,7 +964,7 @@ export default function Pos() {
       </div>
 
       {/* Cart Side */}
-      <div id="cart-side-section" className="w-full lg:w-[480px] xl:w-[545px] flex flex-col bg-white rounded-[32px] border border-gray-100 shadow-lg shrink-0 overflow-hidden min-h-[450px] lg:h-full transition-all">
+      <div id="cart-side-section" className="w-full lg:w-[480px] xl:w-[545px] flex flex-col bg-white rounded-[32px] border border-gray-100 shadow-lg shrink-0 overflow-hidden min-h-[450px] max-h-[85vh] lg:max-h-full lg:h-full transition-all">
         <div className="p-6 bg-gray-900 text-white">
           <div className="flex items-center gap-2 mb-2">
             <ShoppingCart size={20} className="text-orange-500" />
@@ -1039,33 +1047,28 @@ export default function Pos() {
           )}
 
           <div ref={cartListRef} className="flex-1 overflow-y-auto p-4 space-y-4 pr-12">
-            <AnimatePresence initial={false}>
-              {cart.map(item => (
-                <motion.div 
-                  key={item.id}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl"
+            {cart.map(item => (
+              <div 
+                key={item.id}
+                className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl"
+              >
+                <div className="flex-1 overflow-hidden">
+                  <h4 className="font-bold text-sm text-gray-900 truncate">{item.name}</h4>
+                  <p className="text-xs text-gray-500">{(item.priceAtSale || 0).toLocaleString('de-DE')} FCFA</p>
+                </div>
+                <div className="flex items-center gap-2 bg-white px-2 py-1 rounded-xl border border-gray-100">
+                  <button onClick={() => updateQuantity(item.id, -1)} className="text-gray-400 hover:text-gray-900"><Minus size={14} /></button>
+                  <span className="text-xs font-black min-w-[20px] text-center">{item.quantity}</span>
+                  <button onClick={() => updateQuantity(item.id, 1)} className="text-gray-400 hover:text-gray-900"><Plus size={14} /></button>
+                </div>
+                <button 
+                  onClick={() => removeFromCart(item.id)}
+                  className="p-2 text-gray-400 hover:text-red-500 transition-colors"
                 >
-                  <div className="flex-1 overflow-hidden">
-                    <h4 className="font-bold text-sm text-gray-900 truncate">{item.name}</h4>
-                    <p className="text-xs text-gray-500">{(item.priceAtSale || 0).toLocaleString('de-DE')} FCFA</p>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white px-2 py-1 rounded-xl border border-gray-100">
-                    <button onClick={() => updateQuantity(item.id, -1)} className="text-gray-400 hover:text-gray-900"><Minus size={14} /></button>
-                    <span className="text-xs font-black min-w-[20px] text-center">{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.id, 1)} className="text-gray-400 hover:text-gray-900"><Plus size={14} /></button>
-                  </div>
-                  <button 
-                    onClick={() => removeFromCart(item.id)}
-                    className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
             {cart.length === 0 && (
               <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-50 pt-10">
                 <ShoppingCart size={48} className="mb-4" />
@@ -1115,22 +1118,22 @@ export default function Pos() {
               initial={{ opacity: 0, y: 100, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 100, scale: 0.95 }}
-              className="relative bg-white w-full h-full sm:h-auto sm:max-w-md sm:rounded-[40px] shadow-2xl overflow-hidden flex flex-col"
+              className="relative bg-white w-full max-h-[92vh] sm:max-h-[88vh] sm:max-w-md sm:rounded-[28px] shadow-2xl overflow-hidden flex flex-col text-slate-800"
             >
               {checkoutStep === 'cart' ? (
-                <div className="p-5 sm:p-6 flex flex-col h-full">
-                  <div className="flex justify-between items-center mb-5">
+                <div className="p-4 sm:p-5 flex flex-col overflow-y-auto max-h-full">
+                  <div className="flex justify-between items-center mb-3">
                     <div>
-                      <h2 className="text-xl font-black text-gray-900 tracking-tight italic uppercase decoration-orange-500 decoration-2 underline-offset-4">RÈGLEMENT</h2>
-                      <p className="text-[8px] uppercase font-black tracking-widest text-gray-400 mt-1">Étape finale</p>
+                      <h2 className="text-lg font-black text-gray-900 tracking-tight italic uppercase decoration-orange-500 decoration-2 underline-offset-4">RÈGLEMENT</h2>
+                      <p className="text-[7.5px] uppercase font-black tracking-widest text-gray-400 mt-0.5">Étape finale</p>
                     </div>
-                    <button onClick={() => setIsCheckoutOpen(false)} className="p-2 hover:bg-gray-50 rounded-full transition-all group">
-                      <X size={18} className="text-gray-300 group-hover:text-gray-900" />
+                    <button onClick={() => setIsCheckoutOpen(false)} className="p-1.5 hover:bg-gray-50 rounded-full transition-all group">
+                      <X size={16} className="text-gray-300 group-hover:text-gray-900" />
                     </button>
                   </div>
                   
-                  <div className="flex-1 overflow-y-auto space-y-6">
-                    <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-2">
                          {[
                            { id: 'cash', icon: Banknote, label: 'Cash' },
                            { id: 'card', icon: CreditCard, label: 'Carte' },
@@ -1139,44 +1142,44 @@ export default function Pos() {
                            <button
                              key={method.id}
                              onClick={() => setPaymentMethod(method.id as PaymentMethod)}
-                             className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${paymentMethod === method.id ? 'border-orange-500 bg-orange-50 text-orange-600 shadow-lg shadow-orange-500/10' : 'border-gray-50 hover:border-gray-100 text-gray-400'}`}
+                             className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 transition-all ${paymentMethod === method.id ? 'border-orange-500 bg-orange-50 text-orange-600 shadow-md shadow-orange-500/5' : 'border-gray-50 hover:border-gray-100 text-gray-400'}`}
                            >
-                             <method.icon size={20} />
-                             <span className="text-[8px] font-black uppercase tracking-widest">{method.label}</span>
+                             <method.icon size={18} />
+                             <span className="text-[7.5px] font-black uppercase tracking-widest">{method.label}</span>
                            </button>
                          ))}
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="space-y-3">
                       {/* Recu / Remise & Taxes Details */}
-                      <div className="bg-gray-50/80 p-4 rounded-2xl border border-gray-100/80 space-y-2.5">
-                        <div className="flex justify-between items-center text-xs text-gray-505">
+                      <div className="bg-gray-50/80 p-3 rounded-xl border border-gray-100/80 space-y-1.5">
+                        <div className="flex justify-between items-center text-[11px] text-gray-500">
                           <span className="font-medium text-gray-500">Sous-total</span>
                           <span className="font-bold text-gray-900">{(subtotal || 0).toLocaleString('de-DE')} FCFA</span>
                         </div>
                         
-                        <div className="flex items-center justify-between gap-4 py-1.5 border-t border-b border-gray-105">
-                          <label className="text-[10px] font-black uppercase text-gray-400">Remise (FCFA)</label>
+                        <div className="flex items-center justify-between gap-4 py-1 border-t border-b border-gray-100">
+                          <label className="text-[9px] font-black uppercase text-gray-400">Remise (FCFA)</label>
                           <input 
                             type="number"
                             value={discount || ''}
                             onChange={(e) => setDiscount(Number(e.target.value))}
                             placeholder="0"
-                            className="w-28 bg-white border border-gray-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-200 rounded-lg px-2.5 py-1 text-right font-black text-xs outline-none"
+                            className="w-24 bg-white border border-gray-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-200 rounded-md px-2 py-0.5 text-right font-black text-xs outline-none"
                           />
                         </div>
 
-                        <div className="flex justify-between items-center text-xs text-gray-505">
-                          <span className="font-medium text-gray-500">Taxes (0%)</span>
+                        <div className="flex justify-between items-center text-[11px] text-gray-500">
+                          <span className="font-medium text-gray-505">Taxes (0%)</span>
                           <span className="font-bold text-gray-900">0 FCFA</span>
                         </div>
                       </div>
 
-                      <div className="bg-gray-900 p-5 rounded-[24px] text-white shadow-xl relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-20 h-20 bg-white/5 -mr-10 -mt-10 rounded-full" />
+                      <div className="bg-gray-900 py-3 px-4 rounded-xl text-white shadow-lg relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-16 h-16 bg-white/5 -mr-8 -mt-8 rounded-full" />
                         <div className="relative">
-                          <p className="text-[8px] font-black uppercase tracking-[0.3em] opacity-40 mb-1 font-sans">Total à payer</p>
-                          <p className="text-2xl font-black italic">{(total || 0).toLocaleString('de-DE')} <span className="text-[9px] opacity-40 font-mono">FCFA</span></p>
+                          <p className="text-[7.5px] font-black uppercase tracking-[0.3em] opacity-40 mb-0.5 font-sans">Total à payer</p>
+                          <p className="text-xl font-black italic">{(total || 0).toLocaleString('de-DE')} <span className="text-[8px] opacity-40 font-mono">FCFA</span></p>
                         </div>
                       </div>
                       
@@ -1184,27 +1187,27 @@ export default function Pos() {
                         <motion.div 
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: 'auto' }}
-                          className="space-y-4"
+                          className="space-y-2.5"
                         >
-                          <div className="space-y-1.5">
-                            <label className="text-[8px] font-black uppercase tracking-widest text-gray-400 ml-1">Montant Reçu</label>
+                          <div className="space-y-1">
+                            <label className="text-[7.5px] font-black uppercase tracking-widest text-gray-400 ml-1">Montant Reçu</label>
                             <input 
                               type="number"
                               value={amountReceived || ''}
                               onChange={(e) => setAmountReceived(Number(e.target.value))}
                               autoFocus
                               placeholder="0"
-                              className="w-full bg-gray-50 border-none focus:bg-white focus:ring-2 focus:ring-orange-500/5 rounded-xl py-3.5 px-5 text-xl font-black outline-none transition-all text-gray-900"
+                              className="w-full bg-gray-50 border-none focus:bg-white focus:ring-2 focus:ring-orange-500/5 rounded-xl py-2 px-4 text-lg font-black outline-none transition-all text-gray-900"
                             />
                           </div>
                           
-                          <div className="bg-orange-50 p-4 rounded-2xl flex justify-between items-center border border-orange-100 shadow-inner">
+                          <div className="bg-orange-50 p-2.5 rounded-xl flex justify-between items-center border border-orange-100 shadow-inner">
                             <div>
-                              <p className="text-orange-600 font-black uppercase tracking-[0.2em] text-[8px] mb-0.5">Rendu</p>
-                              <p className="text-lg font-black text-orange-600 italic">{(change || 0).toLocaleString('de-DE')} <span className="text-[8px] font-mono opacity-50">FCFA</span></p>
+                              <p className="text-orange-600 font-black uppercase tracking-[0.2em] text-[7px] mb-0.5">Rendu</p>
+                              <p className="text-base font-black text-orange-600 italic">{(change || 0).toLocaleString('de-DE')} <span className="text-[7.5px] font-mono opacity-50">FCFA</span></p>
                             </div>
-                            <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center text-orange-500 border border-orange-100/20">
-                              <Banknote size={16} />
+                            <div className="w-7 h-7 bg-white rounded-md flex items-center justify-center text-orange-500 border border-orange-100/20">
+                              <Banknote size={14} />
                             </div>
                           </div>
                         </motion.div>
@@ -1212,23 +1215,23 @@ export default function Pos() {
                     </div>
                   </div>
 
-                  <div className="pt-5 mt-auto flex gap-3">
+                  <div className="pt-3 mt-4 flex gap-2.5">
                     <button 
                       onClick={() => setIsCheckoutOpen(false)}
-                      className="flex-1 py-4 bg-gray-100 text-gray-500 rounded-[20px] font-black text-xs uppercase tracking-widest hover:bg-gray-200 transition-all"
+                      className="flex-1 py-2.5 bg-gray-100 text-gray-500 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-200 transition-all"
                     >
                       Annuler
                     </button>
                     <button 
                       onClick={handleCheckout}
                       disabled={isProcessing || (paymentMethod === 'cash' && amountReceived < total)}
-                      className="flex-[2] py-4 bg-orange-500 text-white rounded-[20px] font-black text-xs uppercase tracking-widest hover:bg-orange-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                      className="flex-[2] py-2.5 bg-orange-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
                     >
                       {isProcessing ? (
-                        <Loader2 className="animate-spin" size={16} />
+                        <Loader2 className="animate-spin" size={14} />
                       ) : (
                         <>
-                          <Check size={16} />
+                          <Check size={14} />
                           Encaisser
                         </>
                       )}
@@ -1236,52 +1239,52 @@ export default function Pos() {
                   </div>
                 </div>
               ) : (
-                <div className="p-6 sm:p-8 text-center flex flex-col h-full bg-gray-900 text-white">
-                  <div className="flex-1 flex flex-col items-center justify-center">
+                <div className="p-4 sm:p-5 text-center flex flex-col h-full overflow-y-auto max-h-full bg-gray-900 text-white">
+                  <div className="flex-1 flex flex-col items-center justify-center py-2">
                     <motion.div 
                       initial={{ scale: 0.5, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
-                      className="w-20 h-20 bg-green-500 text-white rounded-[28px] flex items-center justify-center mb-6 shadow-2xl shadow-green-500/40 transform rotate-6"
+                      className="w-12 h-12 bg-green-500 text-white rounded-[16px] flex items-center justify-center mb-3 shadow-xl shadow-green-500/30 transform rotate-6 animate-pulse"
                     >
-                      <Check size={40} className="stroke-[3]" />
+                      <Check size={26} className="stroke-[3]" />
                     </motion.div>
-                    <h2 className="text-3xl font-black mb-1.5 tracking-tight italic uppercase decoration-green-500 decoration-6 underline-offset-6">Terminé !</h2>
-                    <p className="text-white/40 font-bold text-[9px] uppercase tracking-widest mb-8">Transaction #{lastSaleId.slice(-8).toUpperCase()}</p>
+                    <h2 className="text-xl font-black mb-1 tracking-tight italic uppercase decoration-green-500 decoration-4 underline-offset-4">Terminé !</h2>
+                    <p className="text-white/40 font-bold text-[8px] uppercase tracking-widest mb-4">Transaction #{lastSaleId.slice(-8).toUpperCase()}</p>
                     
-                    <div className="grid grid-cols-2 gap-3 w-full mb-3.5">
+                    <div className="grid grid-cols-2 gap-2 w-full mb-2.5">
                       <button 
                         onClick={handlePrint}
-                        className="flex flex-col items-center justify-center gap-1.5 py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black uppercase tracking-widest text-[9px] transition-all border border-white/5"
+                        className="flex flex-col items-center justify-center gap-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black uppercase tracking-widest text-[8px] transition-all border border-white/5"
                         title="Imprimer un reçu physique"
                       >
-                        <Printer size={16} className="text-orange-500" />
+                        <Printer size={14} className="text-orange-500" />
                         <span>Imprimer</span>
                       </button>
                       
                       <button 
                         onClick={handleDownloadPDF}
-                        className="flex flex-col items-center justify-center gap-1.5 py-3 bg-white text-gray-900 rounded-2xl font-black uppercase tracking-widest text-[9px] transition-all hover:bg-gray-100 shadow-xl"
+                        className="flex flex-col items-center justify-center gap-1 py-2 bg-white text-gray-900 rounded-xl font-black uppercase tracking-widest text-[8px] transition-all hover:bg-gray-100 shadow-xl"
                         title="Télécharger le fichier PDF"
                       >
-                        <FileDown size={16} className="text-blue-600" />
+                        <FileDown size={14} className="text-blue-600" />
                         <span>Télécharger</span>
                       </button>
 
                       <button 
                         onClick={handleOpenPDFInNewTab}
-                        className="flex flex-col items-center justify-center gap-1.5 py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black uppercase tracking-widest text-[9px] transition-all border border-white/5"
+                        className="flex flex-col items-center justify-center gap-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black uppercase tracking-widest text-[8px] transition-all border border-white/5"
                         title="Ouvrir le reçu dans un nouvel onglet"
                       >
-                        <ExternalLink size={16} className="text-amber-500" />
+                        <ExternalLink size={14} className="text-amber-500" />
                         <span>Aperçu PDF</span>
                       </button>
 
                       <button 
                         onClick={handleSharePDF}
-                        className="flex flex-col items-center justify-center gap-1.5 py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black uppercase tracking-widest text-[9px] transition-all border border-white/5"
+                        className="flex flex-col items-center justify-center gap-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black uppercase tracking-widest text-[8px] transition-all border border-white/5"
                         title="Partager le reçu via le canevas de partage natif ou copie-presse"
                       >
-                        <Share2 size={16} className="text-purple-400" />
+                        <Share2 size={14} className="text-purple-400" />
                         <span>Partager</span>
                       </button>
                     </div>
@@ -1289,9 +1292,9 @@ export default function Pos() {
                     {lastSaleData?.clientPhone && (
                       <button 
                          onClick={handleWhatsAppShare}
-                         className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-[9px] transition-all shadow-xl shadow-emerald-500/20"
+                         className="w-full flex items-center justify-center gap-1.5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest text-[8px] transition-all shadow-xl shadow-emerald-500/20"
                       >
-                        <MessageSquare size={14} />
+                        <MessageSquare size={12} />
                         Envoyer par WhatsApp
                       </button>
                     )}
@@ -1299,7 +1302,7 @@ export default function Pos() {
                   
                   <button 
                     onClick={() => { setIsCheckoutOpen(false); setCheckoutStep('cart'); }}
-                    className="w-full py-5 mt-6 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all border border-white/2 font-sans"
+                    className="w-full py-3 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white rounded-xl font-black uppercase tracking-widest text-[9px] transition-all border border-white/2 font-sans mt-3"
                   >
                     Vente Suivante
                   </button>
@@ -1482,10 +1485,10 @@ export default function Pos() {
       </AnimatePresence>
 
     {/* Hidden Receipt for Printing (Thermal Optimized) */}
-    <div id="receipt-print" className="fixed left-[-9999px] top-0 print:static print:block font-mono text-[10px] w-[80mm] mx-auto p-4 bg-white text-black leading-tight">
+    <div id="receipt-print" className="fixed left-[-9999px] top-0 print:static print:block font-mono text-[10px] w-[80mm] mx-auto px-2 py-1 bg-white text-black leading-tight">
       {lastSaleData && (
         <>
-          <div className="text-center mb-4">
+          <div className="text-center mb-2">
             {storeSettings?.logoUrl && (
               <img src={storeSettings.logoUrl} alt="Logo" className="w-12 h-12 mx-auto mb-2 object-contain" />
             )}
@@ -1511,7 +1514,7 @@ export default function Pos() {
             <p className="text-left mt-1">Date: {lastSaleData.date?.toLocaleString() || 'N/A'}</p>
           </div>
 
-          <div className="space-y-1 mb-4 border-t border-dashed pt-2">
+          <div className="space-y-1 mb-2 border-t border-dashed pt-2">
             <div className="flex justify-between font-bold border-b border-dashed pb-1 mb-1 text-[8px]">
               <span className="w-1/2">ARTICLE</span>
               <span className="w-1/4 text-center">QTÉ</span>
@@ -1555,7 +1558,7 @@ export default function Pos() {
             </div>
           </div>
 
-          <div className="text-center mt-4 border-t border-dashed pt-4 mb-2">
+          <div className="text-center mt-2 border-t border-dashed pt-2 mb-1">
             <p className="text-[8px] font-black uppercase">MERCI DE VOTRE VISITE</p>
           </div>
         </>

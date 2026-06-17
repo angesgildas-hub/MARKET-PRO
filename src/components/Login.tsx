@@ -187,6 +187,7 @@ export default function Login() {
       await setDoc(userDocRef, {
         uid: user.uid,
         storeId: storeId,
+        parentStoreId: storeId,
         email: user.email,
         displayName: name || user.displayName || 'Utilisateur',
         role: 'admin',

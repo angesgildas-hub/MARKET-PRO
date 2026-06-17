@@ -223,6 +223,7 @@ export default function Register() {
       await setDoc(doc(db, 'users', result.user.uid), {
         uid: result.user.uid,
         storeId: storeId,
+        parentStoreId: storeId,
         email: formData.email,
         displayName: formData.displayName,
         role: 'admin',
@@ -280,9 +281,7 @@ export default function Register() {
   if (success) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#020617] p-6 font-sans">
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
+        <div 
           className="max-w-md w-full bg-white rounded-[56px] p-12 text-center shadow-2xl relative overflow-hidden"
         >
           <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/5 blur-3xl -z-10" />
@@ -312,7 +311,7 @@ export default function Register() {
           >
             Retour à l'accueil
           </Link>
-        </motion.div>
+        </div>
       </div>
     );
   }
@@ -321,17 +320,13 @@ export default function Register() {
     <div className="min-h-screen flex items-center justify-center bg-[#020617] p-6 font-sans relative overflow-hidden">
       {/* Background Decor */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-[10%] -left-[5%] w-[40%] h-[40%] bg-orange-500/5 rounded-full blur-[100px] animate-pulse" />
-        <div className="absolute -bottom-[10%] -right-[5%] w-[40%] h-[40%] bg-blue-500/5 rounded-full blur-[100px] animate-pulse delay-700" />
+        <div className="absolute -top-[10%] -left-[5%] w-[40%] h-[40%] bg-orange-500/5 rounded-full blur-[100px]" />
+        <div className="absolute -bottom-[10%] -right-[5%] w-[40%] h-[40%] bg-blue-500/5 rounded-full blur-[100px]" />
       </div>
 
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-xl w-full z-10"
-      >
-        <div className="bg-white/10 backdrop-blur-3xl p-1 rounded-[64px] border border-white/10 shadow-2xl overflow-hidden">
-          <div className="bg-white rounded-[60px] p-8 md:p-12">
+      <div className="max-w-xl w-full z-10">
+        <div className="bg-white/10 backdrop-blur-3xl p-1 rounded-[28px] border border-white/10 shadow-2xl overflow-hidden">
+          <div className="bg-white rounded-[24px] p-6 md:p-10">
             
             {/* Header */}
             <div className="text-center mb-10">
@@ -344,90 +339,84 @@ export default function Register() {
               <p className="text-slate-400 font-bold text-[9px] uppercase tracking-[0.4em]">Propulsez votre boutique physique</p>
             </div>
 
-            <AnimatePresence mode="wait">
+            <div>
               {step === 1 ? (
-                <motion.div
-                  key="step1"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  className="space-y-6"
-                >
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div className="space-y-2 col-span-2 md:col-span-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-5">Nom de la Boutique</label>
-                      <div className="relative group">
-                        <Store className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors" size={18} />
+                <div className="space-y-6 animate-none">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="space-y-1 col-span-2 md:col-span-1">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-3">Nom de la Boutique</label>
+                      <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-1.5 hover:bg-slate-100/50 transition-all shadow-sm">
+                        <Store className="text-slate-400 shrink-0" size={14} />
                         <input 
                           type="text" 
                           placeholder="Market Pro Plus"
                           value={formData.storeName}
                           onChange={(e) => setFormData(prev => ({ ...prev, storeName: e.target.value }))}
-                          className="w-full pl-14 pr-6 py-4 bg-slate-50 border-2 border-transparent rounded-[24px] focus:bg-white focus:border-orange-500/20 outline-none font-bold text-slate-700 shadow-sm text-sm"
+                          className="register-input w-full font-bold text-slate-700 text-xs"
                         />
                       </div>
                     </div>
-                    <div className="space-y-2 col-span-2 md:col-span-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-5">Sous-domaine Professionnel</label>
-                      <div className="h-[52px] px-6 bg-slate-100/50 rounded-[24px] border border-dashed border-slate-200 flex items-center">
-                        <span className="text-[10px] font-black text-orange-600 uppercase tracking-widest truncate">{subdomain}</span>
+                    <div className="space-y-1 col-span-2 md:col-span-1">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-3">Sous-domaine Professionnel</label>
+                      <div className="h-[38px] px-4 bg-slate-100/50 rounded-xl border border-dashed border-slate-200 flex items-center">
+                        <span className="text-[9px] font-black text-orange-600 uppercase tracking-widest truncate">{subdomain}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-5">Adresse Physique</label>
-                    <div className="relative group">
-                      <MapPin className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors" size={18} />
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-3">Adresse Physique</label>
+                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-1.5 hover:bg-slate-100/50 transition-all shadow-sm">
+                      <MapPin className="text-slate-400 shrink-0" size={14} />
                       <input 
                         type="text" 
                         placeholder="Lomé, Agoè-Nyivé, Togo"
                         value={formData.address}
                         onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
-                        className="w-full pl-14 pr-6 py-4 bg-slate-50 border-2 border-transparent rounded-[24px] focus:bg-white focus:border-orange-500/20 outline-none font-bold text-slate-700 shadow-sm text-sm"
+                        className="register-input w-full font-bold text-slate-700 text-xs"
                       />
                     </div>
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-5">Nom d'Administrateur</label>
-                       <div className="relative group">
-                         <User className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors" size={18} />
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-3">Nom d'Administrateur</label>
+                       <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-1.5 hover:bg-slate-100/50 transition-all shadow-sm">
+                         <User className="text-slate-400 shrink-0" size={14} />
                          <input 
                            type="text" 
                            placeholder="Jean Dupont"
                            value={formData.displayName}
                            onChange={(e) => setFormData(prev => ({ ...prev, displayName: e.target.value }))}
-                           className="w-full pl-14 pr-6 py-4 bg-slate-50 border-2 border-transparent rounded-[24px] focus:bg-white focus:border-orange-500/20 outline-none font-bold text-slate-700 shadow-sm text-sm"
+                           className="register-input w-full font-bold text-slate-700 text-xs"
                          />
                        </div>
                     </div>
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-5">Email Professionnel</label>
-                       <div className="relative group">
-                         <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors" size={18} />
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-3">Email Professionnel</label>
+                       <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-1.5 hover:bg-slate-100/50 transition-all shadow-sm">
+                         <Mail className="text-slate-400 shrink-0" size={14} />
                          <input 
                            type="email" 
                            placeholder="admin@boutique.com"
                            value={formData.email}
                            onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                           className="w-full pl-14 pr-6 py-4 bg-slate-50 border-2 border-transparent rounded-[24px] focus:bg-white focus:border-orange-500/20 outline-none font-bold text-slate-700 shadow-sm text-sm"
+                           className="register-input w-full font-bold text-slate-700 text-xs"
                          />
                        </div>
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-5">Mot de Passe Système</label>
-                    <div className="relative group">
-                      <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors" size={18} />
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-3">Mot de Passe Système</label>
+                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-1.5 hover:bg-slate-100/50 transition-all shadow-sm">
+                      <Lock className="text-slate-400 shrink-0" size={14} />
                       <input 
                         type="password" 
                         placeholder="••••••••"
                         value={formData.password}
                         onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
-                        className="w-full pl-14 pr-6 py-4 bg-slate-50 border-2 border-transparent rounded-[24px] focus:bg-white focus:border-orange-500/20 outline-none font-bold text-slate-700 shadow-sm text-sm"
+                        className="register-input w-full font-bold text-slate-700 text-xs"
                       />
                     </div>
                   </div>
@@ -440,31 +429,25 @@ export default function Register() {
                       }
                       setStep(2);
                     }}
-                    className="w-full py-5 bg-orange-600 text-white rounded-[28px] font-black uppercase tracking-[0.2em] text-[11px] hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 flex items-center justify-center gap-3 group"
+                    className="w-full py-3.5 bg-orange-600 text-white rounded-xl font-black uppercase tracking-[0.2em] text-[10px] hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 flex items-center justify-center gap-3 group"
                   >
                     <span>Suivant</span>
-                    <ArrowRight size={16} className="group-hover:translate-x-2 transition-transform" />
+                    <ArrowRight size={14} />
                   </button>
-                </motion.div>
+                </div>
               ) : (
-                <motion.div
-                  key="step2"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className="space-y-8"
-                >
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-5">Pays de Résidence</label>
-                    <div className="relative group">
-                      <Globe className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors" size={18} />
+                <div className="space-y-8 animate-none">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-3">Pays de Résidence</label>
+                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-2 hover:bg-slate-100/50 transition-all shadow-sm">
+                      <Globe className="text-slate-400 shrink-0" size={16} />
                       <select 
                         value={formData.country}
                         onChange={(e) => setFormData(prev => ({ ...prev, country: e.target.value }))}
-                        className="w-full pl-14 pr-12 py-4 bg-slate-50 border-2 border-transparent rounded-[24px] focus:bg-white focus:border-orange-500/20 outline-none font-bold text-slate-700 shadow-sm appearance-none cursor-pointer"
+                        className="register-select w-full font-bold text-slate-700 cursor-pointer text-xs"
                       >
                         {countries.map(c => (
-                          <option key={c.code} value={c.code}>{c.name}</option>
+                          <option key={c.code} value={c.code} className="bg-white text-slate-700 font-bold">{c.name}</option>
                         ))}
                       </select>
                     </div>
@@ -492,11 +475,7 @@ export default function Register() {
                   </div>
 
                   {formData.paymentMethods.includes('mobile') && currentCountry?.operators && (
-                    <motion.div 
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      className="space-y-6"
-                    >
+                    <div className="space-y-6">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-5 block">Opérateurs Mobiles Disponibles ({currentCountry.name})</label>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         {currentCountry.operators.map(op => {
@@ -525,9 +504,9 @@ export default function Register() {
                               return (
                                 <div key={opId} className="space-y-1">
                                   <p className="text-[9px] font-black text-slate-400 uppercase ml-5">{op?.name}</p>
-                                  <div className="relative group">
-                                    <SmartphoneNfc className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors" size={18} />
-                                    <div className="absolute left-14 top-1/2 -translate-y-1/2 font-black text-slate-400 text-sm border-r border-slate-200 pr-3">
+                                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-2 hover:bg-slate-100/50 transition-all shadow-sm">
+                                    <SmartphoneNfc className="text-slate-400 shrink-0" size={16} />
+                                    <div className="font-black text-slate-400 text-xs border-r border-slate-200 pr-3 shrink-0">
                                       {currentCountry?.dialCode}
                                     </div>
                                     <input 
@@ -535,7 +514,7 @@ export default function Register() {
                                       placeholder="Numéro de paiement"
                                       value={formData.operatorNumbers[opId] || ''}
                                       onChange={(e) => handleOperatorNumberChange(opId, e.target.value)}
-                                      className="w-full pl-[110px] pr-6 py-4 bg-slate-50 border-2 border-transparent rounded-[24px] focus:bg-white focus:border-orange-500/20 outline-none font-bold text-slate-700 shadow-sm text-sm"
+                                      className="register-input w-full font-bold text-slate-700 text-xs"
                                     />
                                   </div>
                                 </div>
@@ -544,7 +523,7 @@ export default function Register() {
                           </div>
                         </div>
                       )}
-                    </motion.div>
+                    </div>
                   )}
 
                   {/* Togolese GDPR & Legal Terms Acceptance check */}
@@ -577,18 +556,18 @@ export default function Register() {
                     </label>
                   </div>
 
-                  <div className="flex gap-4 pt-4">
+                  <div className="flex gap-3 pt-4">
                     <button 
                       onClick={() => setStep(1)}
-                      className="w-1/3 py-5 bg-slate-100 text-slate-600 rounded-[28px] font-black uppercase tracking-widest text-[11px] hover:bg-slate-200 transition-all flex items-center justify-center gap-2"
+                      className="w-1/3 py-3 bg-slate-100 text-slate-600 rounded-xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-200 transition-all flex items-center justify-center gap-2"
                     >
-                      <ArrowLeft size={16} />
+                      <ArrowLeft size={14} />
                       <span>Back</span>
                     </button>
                     <button 
                       onClick={handleSubmit}
                       disabled={loading}
-                      className="flex-1 py-5 bg-slate-900 text-white rounded-[28px] font-black uppercase tracking-[0.2em] text-[11px] hover:bg-black transition-all shadow-xl shadow-slate-200 flex items-center justify-center gap-3 disabled:opacity-50"
+                      className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-black uppercase tracking-[0.2em] text-[10px] hover:bg-black transition-all shadow-xl shadow-slate-200 flex items-center justify-center gap-3 disabled:opacity-50"
                     >
                       {loading ? (
                         <Loader2 className="animate-spin" size={18} />
@@ -600,16 +579,16 @@ export default function Register() {
                       )}
                     </button>
                   </div>
-                </motion.div>
+                </div>
               )}
-            </AnimatePresence>
+            </div>
 
             <div className="mt-10 text-center">
               <Link to="/" className="text-[10px] font-black text-slate-400 hover:text-slate-900 uppercase tracking-widest transition-colors">Annuler et revenir</Link>
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
 
       <LegalDocsModal 
         isOpen={isLegalOpen} 

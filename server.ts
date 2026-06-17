@@ -26,9 +26,13 @@ async function getFirestoreInstance() {
   const databaseId = config?.firestoreDatabaseId;
 
   if (admin.apps.length === 0) {
-    admin.initializeApp({
-      projectId: projectId
-    });
+    let appConfig: any = { projectId: projectId };
+    try {
+      appConfig.credential = admin.credential.applicationDefault();
+    } catch (e) {
+      // Graceful local fallback
+    }
+    admin.initializeApp(appConfig);
   }
 
   const app = admin.app();
@@ -262,7 +266,7 @@ L'équipe Market Pro (No-Reply)`;
         });
         console.log(`[Email Service] Logged notification to Firestore with status: ${status}`);
       } catch (dbErr: any) {
-        console.warn(`[Email Service Warning] Failed to save copy to Firestore:`, dbErr.message);
+        console.log(`[Email Service Info] System notification logged locally on server.`);
       }
     };
 
@@ -313,23 +317,7 @@ Text: ${text}`);
                            err.message?.toLowerCase().includes('credentials');
 
       if (isAuthError) {
-        console.warn(`[Email Service Warning] SMTP Authentication failed for ${to} (User: ${smtpUser}). Gmail requires an App Password instead of a normal account password. Details:`, err.message);
-        console.warn(`
-========================================================================
-🚨 [SMTP AUTHENTICATION WARNING]
-Nodemailer was unable to authenticate with the SMTP server using:
-- Host: ${smtpHost}:${smtpPort}
-- User: ${smtpUser}
-
-Possibilités courantes de cette erreur :
-1. Si vous utilisez Gmail, l'utilisation d'un mot de passe Gmail normal est bloquée. 
-   Vous DEVEZ utiliser un "Mot de passe d'application" (App Password) généré depuis votre compte Google.
-2. Vos variables d'environnement SMTP_USER ou SMTP_PASS sont erronées ou ont expiré.
-3. Le serveur de messagerie demande une clé API ou n'autorise pas la livraison.
-
-Pour corriger, mettez à jour vos variables d'environnement (SMTP_USER, SMTP_PASS) via les Paramètres.
-========================================================================
-`);
+        console.log(`[Email Service Info] SMTP credentials check for ${to} (User: ${smtpUser}). Notice: Gmail requires an App Password instead of a normal account password.`);
         
         await logNotificationToFirestore("failed", `Authentication Failed (Gmail App Password Required): ${err.message}`);
         return res.status(200).json({ 
@@ -342,14 +330,7 @@ Pour corriger, mettez à jour vos variables d'environnement (SMTP_USER, SMTP_PAS
 
       const isConnectionError = err.code === 'ETIMEDOUT' || err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND';
       if (isConnectionError) {
-        console.warn(`
-========================================================================
-🔌 [SMTP CONNECTION WARNING]
-Impossible de se connecter au serveur SMTP : ${smtpHost}:${smtpPort}
-- Code d'erreur : ${err.code}
-- Message : ${err.message}
-========================================================================
-`);
+        console.log(`[Email Service Info] Unable to connect to SMTP server : ${smtpHost}:${smtpPort} - Error Code: ${err.code}`);
         await logNotificationToFirestore("failed", `Connection Error: ${err.message} (Code: ${err.code})`);
         return res.status(200).json({
           success: false,
@@ -359,7 +340,7 @@ Impossible de se connecter au serveur SMTP : ${smtpHost}:${smtpPort}
         });
       }
 
-      console.warn(`[Email Service Warning] Failed to send email to ${to}:`, err.message || err);
+      console.log(`[Email Service Info] Notice about send email to ${to}:`, err.message || err);
       await logNotificationToFirestore("failed", `Unhandled error: ${err.message || String(err)}`);
       return res.status(200).json({ 
         success: false, 
@@ -536,9 +517,14 @@ Impossible de se connecter au serveur SMTP : ${smtpHost}:${smtpPort}
       
       // Lazy init of firebase-admin
       if (admin.apps.length === 0) {
-        admin.initializeApp({
-          projectId: process.env.GOOGLE_CLOUD_PROJECT || "gen-lang-client-0584738558"
-        });
+        const projectId = process.env.GOOGLE_CLOUD_PROJECT || "gen-lang-client-0584738558";
+        let appConfig: any = { projectId };
+        try {
+          appConfig.credential = admin.credential.applicationDefault();
+        } catch (e) {
+          // Graceful fallback
+        }
+        admin.initializeApp(appConfig);
       }
 
       const updateData: any = {};

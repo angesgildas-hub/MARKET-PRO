@@ -173,6 +173,8 @@ export interface UserPermissions {
 export interface UserProfile {
   uid: string;
   storeId: string;
+  parentStoreId?: string;
+  createdAt?: any;
   email: string;
   displayName: string;
   role: UserRole;

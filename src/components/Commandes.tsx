@@ -476,7 +476,7 @@ export default function Commandes() {
                           className="flex-1 lg:flex-none px-4 py-2 bg-orange-500 hover:bg-orange-600 active:scale-95 transition-all text-white rounded-xl font-extrabold text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-orange-500/10 min-w-[125px]"
                         >
                           <ShoppingCart size={11} />
-                          Encaisser
+                          Envoyer en Caisse
                           <ArrowRight size={11} />
                         </button>
                       )}
@@ -576,13 +576,16 @@ export default function Commandes() {
 
                       {isClientDropdownOpen && (
                         <div className="absolute top-18 left-0 right-0 z-50 bg-white border border-slate-100 rounded-2xl shadow-xl p-3 space-y-2.5 max-h-60 overflow-y-auto">
-                          <input 
-                            type="text" 
-                            placeholder="Rechercher un client..."
-                            value={clientSearchText}
-                            onChange={(e) => setClientSearchText(e.target.value)}
-                            className="w-full text-xs bg-slate-50 border border-slate-100 p-2.5 rounded-xl focus:outline-none focus:border-orange-500 transition-colors"
-                          />
+                          <div className="relative">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            <input 
+                              type="text" 
+                              placeholder="Rechercher un client..."
+                              value={clientSearchText}
+                              onChange={(e) => setClientSearchText(e.target.value)}
+                              className="w-full text-xs bg-slate-50 border border-slate-100 pl-8 pr-3 py-2 rounded-xl focus:outline-none focus:border-orange-500 transition-colors"
+                            />
+                          </div>
                           <div className="space-y-1">
                             <button
                               onClick={() => {

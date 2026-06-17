@@ -87,6 +87,75 @@ export default function Settings() {
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [restoreData, setRestoreData] = useState<any>(null);
 
+  // States for Annexes & Zones configuration
+  const [editingAnnexe, setEditingAnnexe] = useState<any | null>(null);
+  const [editedAnnexeName, setEditedAnnexeName] = useState('');
+  const [editedAnnexeZone, setEditedAnnexeZone] = useState('');
+  const [editedAnnexeAddress, setEditedAnnexeAddress] = useState('');
+  const [editedAnnexePhone, setEditedAnnexePhone] = useState('');
+  const [editedAnnexeIsActive, setEditedAnnexeIsActive] = useState(true);
+
+  const handleStartEditAnnexe = (annexe: any) => {
+    setEditingAnnexe(annexe);
+    setEditedAnnexeName(annexe.name || '');
+    setEditedAnnexeZone(annexe.zone || '');
+    setEditedAnnexeAddress(annexe.address || '');
+    setEditedAnnexePhone(annexe.phone || '');
+    setEditedAnnexeIsActive(annexe.isActive !== false);
+  };
+
+  const handleSaveAnnexeConfig = async () => {
+    if (!userProfile?.storeId || !editingAnnexe) return;
+    if (!editedAnnexeName.trim() || !editedAnnexeZone.trim()) {
+      alert("Le nom et la zone de l'annexe sont requis.");
+      return;
+    }
+
+    try {
+      setIsActionLoading(true);
+      const currentAnnexes = (storeSettings as any).annexes || [];
+      const updatedAnnexes = currentAnnexes.map((a: any) => {
+        if (a.id === editingAnnexe.id) {
+          return {
+            ...a,
+            name: editedAnnexeName.trim(),
+            zone: editedAnnexeZone.trim(),
+            address: editedAnnexeAddress.trim(),
+            phone: editedAnnexePhone.trim(),
+            isActive: editedAnnexeIsActive
+          };
+        }
+        return a;
+      });
+
+      const updatedSettings = {
+        ...storeSettings,
+        annexes: updatedAnnexes,
+        updatedAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(db, 'storeSettings', userProfile.storeId), updatedSettings);
+      
+      setStoreSettings(updatedSettings as any);
+
+      await logAction(
+        userProfile.storeId,
+        auth.currentUser?.uid || '',
+        userProfile.displayName || '',
+        AuditAction.SETTINGS_UPDATE,
+        `Configuration de l'annexe ${editedAnnexeName} mise à jour.`,
+        { annexeId: editingAnnexe.id }
+      );
+
+      setEditingAnnexe(null);
+      alert('Configuration de l\'annexe enregistrée avec succès !');
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `storeSettings/${userProfile.storeId}`);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (userProfile && !userProfile.settingsPassword && !isSetPasswordOpen) {
       setIsSetPasswordOpen(true);
@@ -104,10 +173,21 @@ export default function Settings() {
     let unsubLogs = () => {};
 
     if (userRole === 'admin' && userProfile?.storeId) {
-      unsubUsers = onSnapshot(query(collection(db, 'users'), where('storeId', '==', userProfile.storeId), orderBy('createdAt', 'desc')), (snap) => {
-        setUsers(snap.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile)));
+      const parentId = userProfile.parentStoreId || userProfile.storeId;
+      const annexes = (storeSettings as any)?.annexes || [];
+      const authorizedStoreIds = [parentId, ...annexes.map((a: any) => a.id)].filter(Boolean);
+      const queryStores = authorizedStoreIds.length > 0 ? authorizedStoreIds : [userProfile.storeId];
+
+      unsubUsers = onSnapshot(query(collection(db, 'users'), where('storeId', 'in', queryStores)), (snap) => {
+        const fetchedUsers = snap.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile));
+        fetchedUsers.sort((a, b) => {
+          const timeA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : (a.createdAt ? new Date(a.createdAt as any).getTime() : 0);
+          const timeB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : (b.createdAt ? new Date(b.createdAt as any).getTime() : 0);
+          return timeB - timeA;
+        });
+        setUsers(fetchedUsers);
       }, (error) => {
-        console.warn("Permission denied for users list - expected for non-admins.");
+        console.warn("Permission denied for users list - expected for non-admins.", error);
       });
 
       unsubLogs = onSnapshot(query(collection(db, 'auditLogs'), where('storeId', '==', userProfile.storeId), orderBy('timestamp', 'desc'), limit(50)), (snap) => {
@@ -122,7 +202,7 @@ export default function Settings() {
       unsubUsers();
       unsubLogs();
     };
-  }, [userRole, userProfile?.storeId]);
+  }, [userRole, userProfile?.storeId, storeSettings]);
 
   const handleSetSettingsPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -247,14 +327,49 @@ export default function Settings() {
     setIsUploading(true);
     try {
       const reader = new FileReader();
-      reader.onload = async (event) => {
-        const base64 = event.target?.result as string;
-        // Firebase Auth photoURL has a limit, so we store it in Firestore instead
-        await updateDoc(doc(db, 'users', auth.currentUser!.uid), {
-          photoURL: base64
-        });
-        setIsUploading(false);
-        alert("Photo de profil mise à jour !");
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = async () => {
+          // Create canvas for compression/resizing
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 200;
+          const MAX_HEIGHT = 200;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+
+          // Compress to JPEG with 0.6 quality for small payload size (kb instead of mb)
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
+
+          try {
+            await updateDoc(doc(db, 'users', auth.currentUser!.uid), {
+              photoURL: compressedBase64
+            });
+            setIsUploading(false);
+            alert("Photo de profil mise à jour !");
+          } catch (updateErr: any) {
+            console.error("Error updating user photo:", updateErr);
+            alert("Erreur lors de la mise à jour de la photo: " + (updateErr.message || "La taille du fichier dépasse les limites."));
+            setIsUploading(false);
+          }
+        };
+        img.src = event.target?.result as string;
       };
       reader.readAsDataURL(file);
     } catch (err) {
@@ -515,6 +630,7 @@ export default function Settings() {
     const name = formData.get('name') as string;
     const password = formData.get('password') as string;
     const role = formData.get('role') as UserRole;
+    const targetStoreId = formData.get('targetStoreId') as string;
 
     if (!email || !name || !password) {
       alert("Veuillez remplir tous les champs, y compris le mot de passe.");
@@ -539,7 +655,8 @@ export default function Settings() {
         email,
         displayName: name,
         role,
-        storeId: userProfile?.storeId,
+        storeId: targetStoreId || userProfile?.storeId,
+        parentStoreId: userProfile?.parentStoreId || userProfile?.storeId,
         permissions: getUserDefaultPermissions(email),
         isActive: true,
         createdAt: serverTimestamp()
@@ -638,9 +755,9 @@ export default function Settings() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Strict limit for base64 storage in Firestore (1MB document limit)
-    if (file.size > 500 * 1024) {
-      alert("Le fichier est trop volumineux pour être stocké directement (Max 500KB).");
+    // Strict limit for base64 storage in Firestore (Allow up to 10MB files to be uploaded and then compressed/resized)
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Le fichier est trop volumineux (Max 10 Mo).");
       return;
     }
 
@@ -651,8 +768,8 @@ export default function Settings() {
       img.onload = () => {
         // Create canvas for compression/resizing
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 300;
-        const MAX_HEIGHT = 300;
+        const MAX_WIDTH = 250;
+        const MAX_HEIGHT = 250;
         let width = img.width;
         let height = img.height;
 
@@ -673,12 +790,21 @@ export default function Settings() {
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
         
-        // Export as compressed JPEG or PNG
-        const compressedBase64 = canvas.toDataURL('image/png', 0.7);
+        // Export as compressed image (JPEG 0.6 is extremely lightweight and fast)
+        const isPng = file.type === 'image/png';
+        const compressedBase64 = isPng ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.6);
         setStoreSettings(prev => ({ ...prev!, logoUrl: compressedBase64 }));
         setIsUploading(false);
       };
+      img.onerror = () => {
+        setIsUploading(false);
+        alert("Erreur lors de la lecture de l'image.");
+      };
       img.src = reader.result as string;
+    };
+    reader.onerror = () => {
+      setIsUploading(false);
+      alert("Erreur lors de la lecture du fichier.");
     };
     reader.readAsDataURL(file);
   };
@@ -687,16 +813,53 @@ export default function Settings() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 200 * 1024) {
-      alert("La signature est trop volumineuse (Max 200KB).");
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Le fichier est trop volumineux (Max 10 Mo).");
       return;
     }
 
     setIsUploadingSignature(true);
     const reader = new FileReader();
     reader.onloadend = () => {
-      setStoreSettings(prev => ({ ...prev!, signatureUrl: reader.result as string }));
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 250;
+        const MAX_HEIGHT = 120;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        const isPng = file.type === 'image/png';
+        const compressedBase64 = isPng ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.6);
+        setStoreSettings(prev => ({ ...prev!, signatureUrl: compressedBase64 }));
+        setIsUploadingSignature(false);
+      };
+      img.onerror = () => {
+        setIsUploadingSignature(false);
+        alert("Erreur lors de la lecture de l'image.");
+      };
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => {
       setIsUploadingSignature(false);
+      alert("Erreur lors de la lecture du fichier.");
     };
     reader.readAsDataURL(file);
   };
@@ -796,6 +959,14 @@ export default function Settings() {
             ? 'Configurer le nom de la boutique, le logo, l\'adresse et le contact.' 
             : 'Configure store name, logo, address and contact.') 
     },
+    ...(isSuperAdmin ? [] : [{ 
+      id: 'annexes', 
+      label: language === 'fr' ? 'Annexes & Zones' : 'Branches & Zones', 
+      icon: Globe, 
+      description: language === 'fr' 
+        ? 'Configurez vos succursales de vente et gérez-les par zones géographiques.' 
+        : 'Configure your sales branches and organize them by geographical zones.' 
+    }]),
     { 
       id: 'profile', 
       label: t.profile, 
@@ -1176,6 +1347,197 @@ export default function Settings() {
               </div>
             )}
             
+            {activeTab === 'annexes' && (
+              <div className="space-y-10 animate-fade-in">
+                <div>
+                   <h3 className="text-3xl font-black text-gray-900 tracking-tight leading-none mb-3">
+                     {language === 'fr' ? 'Gestion des Annexes (Filiales) & Zones' : 'Branches (Subsidiaries) & Zones Management'}
+                   </h3>
+                   <p className="text-sm text-gray-500 font-semibold leading-relaxed max-w-3xl">
+                     {language === 'fr' 
+                       ? 'Supervisez les succursales associées à votre boutique principale par le Super Administrateur. Personnalisez leurs noms, modifiez leurs numéros de contact ou réaffectez-les à des zones géographiques spécifiques.' 
+                       : 'Oversee the branches associated with your main store by the Super Admin. Personalize names, update contacts or reassign them to specific geographic zones.'}
+                   </p>
+                </div>
+
+                {/* Editing Panel overlay/in-line if active */}
+                {editingAnnexe && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.98, y: 15 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    className="bg-orange-50/55 p-8 rounded-[40px] border-2 border-orange-200/60 shadow-xl shadow-orange-500/5 space-y-6"
+                  >
+                    <div className="flex items-center justify-between border-b border-orange-200/40 pb-4">
+                      <div>
+                        <span className="text-[10px] uppercase font-black tracking-widest text-orange-600 block mb-0.5">
+                          {language === 'fr' ? 'Édition de l\'annexe' : 'Branch Configuration'}
+                        </span>
+                        <h4 className="text-xl font-black text-slate-800 tracking-tight">{editingAnnexe.name}</h4>
+                      </div>
+                      <button 
+                        onClick={() => setEditingAnnexe(null)}
+                        className="text-xs font-black text-gray-400 uppercase tracking-widest hover:text-gray-900 cursor-pointer"
+                      >
+                        {language === 'fr' ? 'Annuler' : 'Cancel'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                          {language === 'fr' ? 'Nom de la Filiale *' : 'Branch Name *'}
+                        </label>
+                        <input 
+                          type="text"
+                          value={editedAnnexeName}
+                          onChange={(e) => setEditedAnnexeName(e.target.value)}
+                          className="w-full text-sm px-5 py-3.5 bg-white border border-gray-200 rounded-[20px] font-bold outline-none focus:ring-2 focus:ring-orange-500/10 transition-all text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                          {language === 'fr' ? 'Zone Géographique / Ville *' : 'Geographical Zone / City *'}
+                        </label>
+                        <input 
+                          type="text"
+                          value={editedAnnexeZone}
+                          onChange={(e) => setEditedAnnexeZone(e.target.value)}
+                          className="w-full text-sm px-5 py-3.5 bg-white border border-gray-200 rounded-[20px] font-bold outline-none focus:ring-2 focus:ring-orange-500/10 transition-all text-slate-850"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                          {language === 'fr' ? 'Adresse de la Filiale' : 'Branch Address'}
+                        </label>
+                        <input 
+                          type="text"
+                          value={editedAnnexeAddress}
+                          onChange={(e) => setEditedAnnexeAddress(e.target.value)}
+                          className="w-full text-sm px-5 py-3.5 bg-white border border-gray-200 rounded-[20px] font-bold outline-none focus:ring-2 focus:ring-orange-500/10 transition-all text-slate-850"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                          {language === 'fr' ? 'Téléphone de la Filiale' : 'Branch Phone'}
+                        </label>
+                        <input 
+                          type="text"
+                          value={editedAnnexePhone}
+                          onChange={(e) => setEditedAnnexePhone(e.target.value)}
+                          className="w-full text-sm px-5 py-3.5 bg-white border border-gray-200 rounded-[20px] font-sans font-bold outline-none focus:ring-2 focus:ring-orange-500/10 transition-all text-slate-850"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4 py-2">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        {language === 'fr' ? 'Statut Opérationnel :' : 'Operational Status:'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={editedAnnexeIsActive}
+                          onChange={(e) => setEditedAnnexeIsActive(e.target.checked)}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
+                        <span className="ml-3 text-xs font-black uppercase text-slate-700 tracking-wider">
+                          {editedAnnexeIsActive ? (language === 'fr' ? 'ACTIF' : 'ACTIVE') : (language === 'fr' ? 'INACTIF' : 'INACTIVE')}
+                        </span>
+                      </label>
+                    </div>
+
+                    <div className="flex gap-4 pt-2">
+                      <button 
+                        onClick={() => setEditingAnnexe(null)}
+                        className="flex-1 py-3.5 bg-gray-200 hover:bg-gray-300 text-slate-600 rounded-[20px] font-black text-xs uppercase tracking-widest transition-all cursor-pointer"
+                      >
+                        {language === 'fr' ? 'Annuler' : 'Cancel'}
+                      </button>
+                      <button 
+                        onClick={handleSaveAnnexeConfig}
+                        className="flex-1 py-3.5 bg-orange-655 hover:bg-orange-700 text-white rounded-[20px] font-black text-xs uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Globe size={16} />
+                        {language === 'fr' ? 'Enregistrer les modifications' : 'Save Configurations'}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Annexes grouped list */}
+                {!(storeSettings as any).annexes || ((storeSettings as any).annexes || []).length === 0 ? (
+                  <div className="text-center py-16 bg-gray-50 rounded-[48px] border-2 border-dashed border-gray-150 p-12">
+                    <Globe size={48} className="mx-auto text-gray-300 mb-4" />
+                    <h4 className="text-xl font-black text-gray-800 tracking-tight">
+                      {language === 'fr' ? 'Aucune succursale configurée' : 'No branch configured'}
+                    </h4>
+                    <p className="text-sm text-gray-400 font-semibold mt-2 leading-relaxed max-w-md mx-auto">
+                      {language === 'fr' 
+                        ? 'Seul le Super Administrateur principal peut initier des annexes pour votre franchise. Contactez le support pour ajouter une nouvelle filiale.' 
+                        : 'Only the main Super Admin can propose new branches for your franchise. Contact support to add a new subsidiary.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-8">
+                    {/* Grouped by geographic zone display */}
+                    <div>
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-4">
+                        {language === 'fr' ? 'Vos filiale(s) regroupées par Zones' : 'Your branches grouped by Zones'}
+                      </span>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {((storeSettings as any).annexes || []).map((annexe: any) => (
+                          <div 
+                            key={`settings-annexe-${annexe.id}`} 
+                            className={`p-6 rounded-[32px] border bg-white shadow-sm hover:shadow-xl hover:shadow-gray-100 transition-all duration-300 flex flex-col justify-between gap-6 ${annexe.isActive === false ? 'opacity-65 border-gray-100 bg-gray-50/50' : 'border-gray-100'}`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                                  <h4 className="font-black text-gray-900 text-base tracking-tight leading-none">{annexe.name}</h4>
+                                  <span className="px-2.5 py-0.5 bg-orange-50 text-orange-600 rounded-full text-[8px] font-black uppercase tracking-wider">
+                                    {annexe.zone || 'Géographique'}
+                                  </span>
+                                </div>
+                                <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">ID: {annexe.id}</p>
+                              </div>
+
+                              <div className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${annexe.isActive !== false ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                                {annexe.isActive !== false ? (language === 'fr' ? 'Opérationnelle' : 'Active') : (language === 'fr' ? 'Désactivée' : 'Disabled')}
+                              </div>
+                            </div>
+
+                            <div className="bg-slate-50/80 p-4 rounded-2xl text-[11px] text-slate-600 font-semibold font-sans space-y-1.5 shrink-0">
+                              <p className="flex items-center gap-2">
+                                <span className="text-gray-400 shrink-0">📍</span>
+                                <span className="truncate">{annexe.address || (language === 'fr' ? 'Non configurée' : 'No address')}</span>
+                              </p>
+                              <p className="flex items-center gap-2">
+                                <span className="text-gray-400 shrink-0">📞</span>
+                                <span className="truncate">{annexe.phone || (language === 'fr' ? 'Inconnu' : 'No contact')}</span>
+                              </p>
+                            </div>
+
+                            <button 
+                              onClick={() => handleStartEditAnnexe(annexe)}
+                              className="w-full py-3 bg-white hover:bg-slate-900 hover:text-white border border-gray-200 hover:border-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-sm shrink-0 flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                              <Globe size={12} />
+                              {language === 'fr' ? 'Configurer la Filiale & la Zone' : 'Configure Branch & Zone'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeTab === 'profile' && (
               <div className="space-y-8">
                 <AnimatePresence>
@@ -1770,7 +2132,7 @@ export default function Settings() {
 
                  <AnimatePresence>
                    {isAddUserOpen && (
-                     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4">
+                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                        <motion.div 
                          initial={{ opacity: 0 }} 
                          animate={{ opacity: 1 }} 
@@ -1782,7 +2144,7 @@ export default function Settings() {
                          initial={{ opacity: 0, y: 100, scale: 0.95 }}
                          animate={{ opacity: 1, y: 0, scale: 1 }}
                          exit={{ opacity: 0, y: 100, scale: 0.95 }}
-                         className="relative bg-white w-full h-full sm:h-auto sm:max-w-md sm:rounded-[28px] shadow-2xl overflow-hidden flex flex-col"
+                         className="relative bg-white w-full max-w-md rounded-[28px] shadow-2xl overflow-hidden flex flex-col"
                        >
                          <div className="p-6 sm:p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                            <div>
@@ -1835,6 +2197,22 @@ export default function Settings() {
                                  <option value="cashier">Caissier</option>
                                  <option value="manager">Gérant / Chef</option>
                                  <option value="admin">Administrateur</option>
+                               </select>
+                             </div>
+                             <div className="space-y-3">
+                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Boutique d'affectation</label>
+                               <select 
+                                 name="targetStoreId"
+                                 className="w-full px-8 py-5 bg-gray-50 border-none rounded-[28px] font-bold text-gray-900 focus:bg-white focus:ring-8 focus:ring-orange-500/5 transition-all outline-none appearance-none font-sans"
+                               >
+                                 <option value={userProfile?.parentStoreId || userProfile?.storeId || "main"}>
+                                   {storeSettings?.name || "Boutique Principale"} (Principal)
+                                 </option>
+                                 {((storeSettings as any)?.annexes || []).map((annexe: any) => (
+                                   <option key={annexe.id} value={annexe.id}>
+                                     {annexe.name} ({annexe.zone || "Succursale"})
+                                   </option>
+                                 ))}
                                </select>
                              </div>
                            </div>

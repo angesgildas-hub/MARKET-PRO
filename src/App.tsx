@@ -27,6 +27,8 @@ import {
   Bell,
   BellRing,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
   AlertTriangle,
   Trash2,
   CheckCheck,
@@ -35,7 +37,7 @@ import {
 import { onSnapshot, collection, doc, getDoc, setDoc, updateDoc, getDocs, query, where } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import Dashboard from './components/Dashboard';
 import Inventory from './components/Inventory';
 import Pos from './components/Pos';
@@ -89,6 +91,57 @@ function UserHeader({ isLicenseValid }: { isLicenseValid: boolean }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [activeNotificationTab, setActiveNotificationTab] = useState<'all' | 'alerts' | 'messages'>('all');
   
+  // Custom Calendar States & Utility
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
+
+  const getCalendarDays = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    
+    // Premier jour du mois en cours
+    const firstDayOfMonth = new Date(year, month, 1);
+    // Jour de la semaine (0 = Dimanche, 1 = Lundi, etc.)
+    const startDayOfWeek = firstDayOfMonth.getDay(); 
+    // Ajuster pour démarrer par Lundi (0) jusqu'à Dimanche (6)
+    const startOffset = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
+    
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
+    
+    const days = [];
+    
+    // Remplissage avec les jours du mois précédent
+    for (let i = startOffset - 1; i >= 0; i--) {
+      days.push({
+        day: daysInPrevMonth - i,
+        isCurrentMonth: false,
+        date: new Date(year, month - 1, daysInPrevMonth - i)
+      });
+    }
+    
+    // Jours du mois en cours
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push({
+        day: i,
+        isCurrentMonth: true,
+        date: new Date(year, month, i)
+      });
+    }
+    
+    // Jours du mois suivant pour compléter à 42 jours (6 lignes de 7 jours)
+    const remainingDays = 42 - days.length;
+    for (let i = 1; i <= remainingDays; i++) {
+      days.push({
+        day: i,
+        isCurrentMonth: false,
+        date: new Date(year, month + 1, i)
+      });
+    }
+    
+    return days;
+  };
+  
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>(() => {
     try {
       const cached = localStorage.getItem(`read-notifications-${userProfile?.storeId || 'common'}`);
@@ -120,21 +173,37 @@ function UserHeader({ isLicenseValid }: { isLicenseValid: boolean }) {
 
     const parentStoreId = settings.parentStoreId || settings.id;
 
-    // Listen to real-time changes in all store settings in the system
-    const q = query(collection(db, 'storeSettings'));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const allStoresList = snap.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      } as StoreSettings));
+    // Listen to real-time changes in parent store document
+    const unsubscribe = onSnapshot(doc(db, 'storeSettings', parentStoreId), (snap) => {
+      if (!snap.exists()) {
+        setFamilyStores([]);
+        return;
+      }
       
-      const filtered = allStoresList.filter(s => 
-        s.id === parentStoreId || (s as any).parentStoreId === parentStoreId
-      );
+      const parentData = snap.data();
+      const parentStore = {
+        ...parentData,
+        id: snap.id
+      } as any;
+
+      const combined: any[] = [parentStore];
+      const customAnnexes = parentData.annexes || [];
       
-      setFamilyStores(filtered);
+      customAnnexes.forEach((ann: any) => {
+        combined.push({
+          id: ann.id,
+          name: ann.name,
+          address: ann.address || parentStore.address,
+          phone: ann.phone || parentStore.phone,
+          parentStoreId: parentStoreId,
+          isActive: ann.isActive !== false,
+          isAnnexeUnit: true
+        });
+      });
+
+      setFamilyStores(combined);
     }, (error) => {
-      console.warn("Error subscribing to family stores:", error);
+      console.warn("Error subscribing to parent store for family stores:", error);
     });
 
     return () => unsubscribe();
@@ -386,7 +455,10 @@ function UserHeader({ isLicenseValid }: { isLicenseValid: boolean }) {
     <header className="fixed top-0 right-0 left-0 lg:left-[280px] h-20 bg-white/90 backdrop-blur-md z-30 px-6 sm:px-8 lg:px-10 flex items-center justify-between border-b border-[#EAECEF] print:hidden pl-20 lg:pl-10">
        <div className="flex-1 max-w-sm mr-8">
           <div className="relative group">
-            <Search className="absolute left-4.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#4F8CFF] transition-colors" size={16} />
+            <Search 
+              size={16} 
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#4F8CFF] transition-colors pointer-events-none" 
+            />
             <input 
               type="text" 
               placeholder="Rechercher..."
@@ -576,9 +648,106 @@ function UserHeader({ isLicenseValid }: { isLicenseValid: boolean }) {
             </Link>
           )}
 
-          <div className="text-right hidden md:block">
-             <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">{formatDate(time)}</p>
-             <p className="text-lg font-mono font-black text-gray-900 leading-none">{formatTime(time)}</p>
+          {/* INTERACTIVE CALENDAR POPUP */}
+          <div className="relative hidden md:block">
+            <button 
+              onClick={() => setIsCalendarOpen(!isCalendarOpen)}
+              className="text-right hover:opacity-85 active:scale-95 transition-all cursor-pointer block select-none focus:outline-none"
+              title="Cliquer pour afficher le calendrier"
+            >
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1 flex items-center justify-end gap-1.5 hover:text-[#4F8CFF] transition-colors">
+                <Calendar size={11} className="text-[#4F8CFF]" />
+                {formatDate(time)}
+              </p>
+              <p className="text-lg font-mono font-black text-gray-900 leading-none">{formatTime(time)}</p>
+            </button>
+
+            {/* OUTSIDE HANDLER OVERLAY FOR CALENDAR */}
+            {isCalendarOpen && (
+              <div 
+                className="fixed inset-0 z-40 bg-transparent" 
+                onClick={() => setIsCalendarOpen(false)}
+              />
+            )}
+
+            {/* CALENDAR PANEL */}
+            <AnimatePresence>
+              {isCalendarOpen && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 mt-3 w-80 bg-white rounded-3xl shadow-2xl border border-gray-100 p-5 z-50 font-sans origin-top-right text-slate-800"
+                >
+                  {/* Calendar Header with Navigation */}
+                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-gray-50">
+                    <button
+                      onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}
+                      className="p-1.5 hover:bg-slate-50 rounded-lg transition-all text-slate-500 hover:text-slate-800"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <div className="text-center">
+                      <p className="text-xs font-black capitalize text-slate-900 leading-none tracking-tight">
+                        {calendarMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}
+                      className="p-1.5 hover:bg-slate-50 rounded-lg transition-all text-slate-500 hover:text-slate-800"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+
+                  {/* Days of the Week */}
+                  <div className="grid grid-cols-7 gap-1 text-center mb-2">
+                    {['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'].map((day) => (
+                      <span key={day} className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                        {day}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Calendar Days Grid */}
+                  <div className="grid grid-cols-7 gap-1 text-center">
+                    {getCalendarDays(calendarMonth).map((item, index) => {
+                      const isToday = item.date.toDateString() === new Date().toDateString();
+                      return (
+                        <div
+                          key={`day-${index}`}
+                          className={`aspect-square flex items-center justify-center text-xs font-bold rounded-full transition-all cursor-pointer relative ${
+                            item.isCurrentMonth 
+                              ? 'text-slate-800 hover:bg-[#4F8CFF]/10 hover:text-[#4F8CFF]' 
+                              : 'text-slate-300 hover:bg-slate-50'
+                          } ${
+                            isToday 
+                              ? 'bg-[#4F8CFF] text-white shadow-lg shadow-[#4F8CFF]/25 font-black hover:bg-[#4F8CFF] hover:text-white' 
+                              : ''
+                          }`}
+                        >
+                          {item.day}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Footer with Back to Today */}
+                  <div className="mt-4 pt-3 border-t border-gray-50 flex items-center justify-between">
+                    <button
+                      onClick={() => setCalendarMonth(new Date())}
+                      className="text-[10px] font-black uppercase text-[#4F8CFF] hover:text-[#4F8CFF]/80 tracking-widest transition-all"
+                    >
+                      Aujourd'hui
+                    </button>
+                    <span className="text-[9px] font-mono text-slate-400">
+                      Heure locale
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           <div className="w-px h-10 bg-gray-100 hidden md:block" />
           <Link to="/settings?tab=profile" className="flex items-center gap-4 group hover:opacity-85 transition-all">
@@ -720,14 +889,9 @@ function Sidebar() {
 
 
 const PageTransition = ({ children }: { children: React.ReactNode }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 10 }}
-    animate={{ opacity: 1, y: 0 }}
-    exit={{ opacity: 0, y: -10 }}
-    transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-  >
+  <div className="w-full">
     {children}
-  </motion.div>
+  </div>
 );
 
 function AppRoutes({ 
@@ -1021,26 +1185,58 @@ export default function App() {
       return;
     }
 
-    const unsubscribeSettings = onSnapshot(doc(db, 'storeSettings', userProfile.storeId), (snap) => {
+    const parentId = userProfile.parentStoreId || userProfile.storeId;
+
+    const unsubscribeSettings = onSnapshot(doc(db, 'storeSettings', parentId), (snap) => {
       if (snap.exists()) {
-        const data = snap.data();
-        setSettings(data);
+        const parentData = snap.data();
         
-        // Check license expiration
-        if (data.licenseExpiry && data.licenseStatus === 'active') {
+        if (userProfile.storeId !== parentId) {
+          // Active store is a sub-boutique (annexe)
+          const annexes = parentData.annexes || [];
+          const annexeItem = annexes.find((a: any) => a.id === userProfile.storeId);
+          if (annexeItem) {
+            setSettings({
+              ...parentData,
+              id: annexeItem.id,
+              name: annexeItem.name,
+              address: annexeItem.address || parentData.address,
+              phone: annexeItem.phone || parentData.phone,
+              parentStoreId: parentId,
+              isAnnexeUnit: true
+            } as any);
+          } else {
+            // Fallback: use parent store settings if annexe is not found or has been deleted
+            setSettings({
+              ...parentData,
+              id: parentId
+            });
+          }
+        } else {
+          // Active store is the main store itself
+          setSettings({
+            ...parentData,
+            id: parentId
+          });
+        }
+
+        // Check license expiration on the main/parent store settings
+        if (parentData.licenseExpiry && parentData.licenseStatus === 'active') {
           const now = new Date();
-          const expiry = typeof data.licenseExpiry === 'string' ? new Date(data.licenseExpiry) : data.licenseExpiry.toDate ? data.licenseExpiry.toDate() : new Date(data.licenseExpiry);
+          const expiry = typeof parentData.licenseExpiry === 'string' ? new Date(parentData.licenseExpiry) : parentData.licenseExpiry.toDate ? parentData.licenseExpiry.toDate() : new Date(parentData.licenseExpiry);
           if (now > expiry) {
-            updateDoc(doc(db, 'storeSettings', userProfile.storeId), { licenseStatus: 'expired' }).catch(() => {});
+            updateDoc(doc(db, 'storeSettings', parentId), { licenseStatus: 'expired' }).catch(() => {});
           }
         }
+      } else {
+        setSettings(null);
       }
     }, (error) => {
       console.error("Error watching store settings:", error);
     });
 
     return () => unsubscribeSettings();
-  }, [user, userProfile?.storeId]);
+  }, [user, userProfile?.storeId, userProfile?.parentStoreId]);
 
   const isLicenseValid = settings?.licenseStatus === 'active';
 
@@ -1161,9 +1357,16 @@ export default function App() {
         const data = snap.data();
         setUserProfile(data);
         
-        // Repair missing storeId
+        // Repair missing storeId and parentStoreId
+        const repairs: any = {};
         if (!data.storeId) {
-          await updateDoc(doc(db, 'users', user.uid), { storeId: user.uid });
+          repairs.storeId = user.uid;
+        }
+        if (!data.parentStoreId) {
+          repairs.parentStoreId = data.parentStoreId || user.uid;
+        }
+        if (Object.keys(repairs).length > 0) {
+          await updateDoc(doc(db, 'users', user.uid), repairs).catch(err => console.error("Repair err:", err));
         }
         
         if (data.isActive === false) {
@@ -1274,18 +1477,19 @@ export default function App() {
       setPreselectedClient,
       verifyAction
     }}>
-      <Router basename={getAutomaticBasename()}>
-        <AppRoutes 
-          user={user} 
-          userRole={userRole} 
-          userProfile={userProfile}
-          isLicenseValid={isLicenseValid} 
-          theme={theme}
-          loading={loading}
-          settings={settings}
-          hasPermission={hasPermission}
-        />
-      </Router>
+      <MotionConfig transition={{ duration: 0, delay: 0, type: false }}>
+        <Router basename={getAutomaticBasename()}>
+          <AppRoutes 
+            user={user} 
+            userRole={userRole} 
+            userProfile={userProfile}
+            isLicenseValid={isLicenseValid} 
+            theme={theme}
+            loading={loading}
+            settings={settings}
+            hasPermission={hasPermission}
+          />
+        </Router>
 
       {/* Global Password Verification Modal */}
       <AnimatePresence>
@@ -1316,7 +1520,7 @@ export default function App() {
                     placeholder="Mot de passe"
                     value={passwordInput}
                     onChange={(e) => setPasswordInput(e.target.value)}
-                    className="w-full pl-14 pr-6 py-5 bg-gray-50 border-2 border-transparent rounded-[24px] focus:bg-white focus:border-orange-500/20 transition-all outline-none font-bold text-center tracking-[0.5em]"
+                    className="w-full pl-14 pr-6 py-5 bg-gray-50 border-2 border-transparent rounded-[24px] focus:bg-white focus:border-orange-500/20 transition-all outline-none font-bold text-left tracking-[0.2em]"
                   />
                 </div>
 
@@ -1379,6 +1583,7 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+      </MotionConfig>
     </AppContext.Provider>
   );
 }

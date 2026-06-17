@@ -686,7 +686,7 @@ export default function Personnel() {
                 type="text" 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="" 
+                placeholder="Rechercher un employé..." 
                 className="w-full pl-12 pr-4 py-4 bg-white border border-gray-100 rounded-2xl font-bold shadow-sm outline-none focus:border-orange-500/30 focus:ring-4 focus:ring-orange-500/5 transition-all"
               />
             </div>
@@ -1055,7 +1055,22 @@ export default function Personnel() {
                   </div>
                   <div className="space-y-1">
                     <label className="text-[8px] font-black uppercase tracking-widest text-gray-400 ml-1">Embouché le</label>
-                    <input name="hireDate" type="date" defaultValue={editingEmployee?.hireDate} required className="w-full px-4 py-2.5 bg-gray-50 border-none rounded-xl font-bold text-gray-900 focus:bg-white focus:ring-2 focus:ring-gray-900/10 transition-all outline-none text-sm" />
+                    <input 
+                      name="hireDate" 
+                      type="date" 
+                      max="9999-12-31"
+                      defaultValue={editingEmployee?.hireDate} 
+                      onChange={e => {
+                        let val = e.target.value;
+                        const parts = val.split('-');
+                        if (parts[0] && parts[0].length > 4) {
+                          parts[0] = parts[0].slice(0, 4);
+                          e.target.value = parts.join('-');
+                        }
+                      }}
+                      required 
+                      className="w-full px-4 py-2.5 bg-gray-50 border-none rounded-xl font-bold text-gray-900 focus:bg-white focus:ring-2 focus:ring-gray-900/10 transition-all outline-none text-sm" 
+                    />
                   </div>
                 </div>
 
@@ -1121,11 +1136,39 @@ export default function Personnel() {
                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1">Date Debut</label>
-                       <input name="startDate" type="date" required className="w-full px-5 py-3 bg-gray-50 border-none rounded-xl font-bold text-sm" />
+                       <input 
+                          name="startDate" 
+                          type="date" 
+                          max="9999-12-31" 
+                          onChange={e => {
+                            let val = e.target.value;
+                            const parts = val.split('-');
+                            if (parts[0] && parts[0].length > 4) {
+                              parts[0] = parts[0].slice(0, 4);
+                              e.target.value = parts.join('-');
+                            }
+                          }}
+                          required 
+                          className="w-full px-5 py-3 bg-gray-50 border-none rounded-xl font-bold text-sm" 
+                        />
                     </div>
                     <div className="space-y-1.5">
                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1">Date Fin</label>
-                       <input name="endDate" type="date" required className="w-full px-5 py-3 bg-gray-50 border-none rounded-xl font-bold text-sm" />
+                       <input 
+                          name="endDate" 
+                          type="date" 
+                          max="9999-12-31" 
+                          onChange={e => {
+                            let val = e.target.value;
+                            const parts = val.split('-');
+                            if (parts[0] && parts[0].length > 4) {
+                              parts[0] = parts[0].slice(0, 4);
+                              e.target.value = parts.join('-');
+                            }
+                          }}
+                          required 
+                          className="w-full px-5 py-3 bg-gray-50 border-none rounded-xl font-bold text-sm" 
+                        />
                     </div>
                  </div>
                  <div className="space-y-1.5">

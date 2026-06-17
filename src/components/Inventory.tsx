@@ -461,8 +461,17 @@ export default function Inventory() {
                     <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1">Date d'Expiration</label>
                     <input 
                       type="date" 
+                      max="9999-12-31"
                       value={formData.expiryDate}
-                      onChange={e => setFormData({ ...formData, expiryDate: e.target.value })}
+                      onChange={e => {
+                        let val = e.target.value;
+                        const parts = val.split('-');
+                        if (parts[0] && parts[0].length > 4) {
+                          parts[0] = parts[0].slice(0, 4);
+                          val = parts.join('-');
+                        }
+                        setFormData({ ...formData, expiryDate: val });
+                      }}
                       className="w-full px-5 py-3 bg-gray-50 border border-transparent rounded-xl font-bold focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-50/50 transition-all outline-none"
                     />
                   </div>

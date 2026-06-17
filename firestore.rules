@@ -13,7 +13,7 @@ service cloud.firestore {
 
     function isBootstrapAdmin() {
       return isSignedIn() && 
-             request.auth.token.get('email_verified', false) == true &&
+             'email' in request.auth.token &&
              (request.auth.token.email == 'anges.gildas@gmail.com' ||
               request.auth.token.email == 'gildas@gmail.com');
     }
@@ -37,7 +37,18 @@ service cloud.firestore {
     function belongsToStore(data) {
       return isBootstrapAdmin() || (
         hasUserDoc() && 
-        data.storeId == userStoreId()
+        data.get('storeId', '') == userStoreId()
+      );
+    }
+
+    function isFranchiseAdminOf(data) {
+      return isBootstrapAdmin() || (
+        hasUserDoc() && 
+        userRole() in ['admin', 'manager'] && (
+          data.get('storeId', '') == userStoreId() ||
+          data.get('parentStoreId', '') == userStoreId() ||
+          (getUserData().get('parentStoreId', '') != "" && data.get('parentStoreId', '') == getUserData().get('parentStoreId', ''))
+        )
       );
     }
 
@@ -64,12 +75,16 @@ service cloud.firestore {
       );
     }
 
+    function getLicenseStoreId() {
+      return exists(/databases/$(database)/documents/storeSettings/$(userStoreId())) ? userStoreId() : getUserData().get('parentStoreId', request.auth.uid);
+    }
+
     function isLicenseActive() {
       return isBootstrapAdmin() || (
         hasUserDoc() && 
-        userStoreId() != "" &&
-        exists(/databases/$(database)/documents/storeSettings/$(userStoreId())) &&
-        get(/databases/$(database)/documents/storeSettings/$(userStoreId())).data.get('licenseStatus', 'inactive') == 'active'
+        getLicenseStoreId() != "" &&
+        exists(/databases/$(database)/documents/storeSettings/$(getLicenseStoreId())) &&
+        get(/databases/$(database)/documents/storeSettings/$(getLicenseStoreId())).data.get('licenseStatus', 'inactive') == 'active'
       );
     }
 
@@ -133,7 +148,11 @@ service cloud.firestore {
              (!data.keys().hasAll(['attachmentName']) || (data.attachmentName is string && data.attachmentName.size() <= 256)) &&
              (!data.keys().hasAll(['attachmentType']) || (data.attachmentType is string && data.attachmentType.size() <= 128)) &&
              (!data.keys().hasAll(['attachmentSize']) || (data.attachmentSize is number)) &&
-             (!data.keys().hasAll(['attachmentData']) || (data.attachmentData is string && data.attachmentData.size() <= 1500000));
+             (!data.keys().hasAll(['attachmentData']) || (data.attachmentData is string && data.attachmentData.size() <= 1500000)) &&
+             (!data.keys().hasAll(['viewOnce']) || (data.viewOnce is bool)) &&
+             (!data.keys().hasAll(['opened']) || (data.opened is bool)) &&
+             (!data.keys().hasAll(['openedBy']) || (data.openedBy is list)) &&
+             (!data.keys().hasAll(['deletedFor']) || (data.deletedFor is list));
     }
 
     function isValidUser(data) {
@@ -162,7 +181,7 @@ service cloud.firestore {
         // Stock adjustment only (ERP internal logic)
         (incoming().diff(existing()).affectedKeys().hasOnly(['stock', 'updatedAt', 'lastStockAdjustment']) && incoming().stock is number) ||
         // Full update
-        (isValidProduct(incoming()) && incoming().storeId == existing().storeId)
+        (isValidProduct(incoming()) && incoming().get('storeId', '') == existing().get('storeId', ''))
       );
       allow delete: if canDelete('inventory') && belongsToStore(existing());
     }
@@ -210,18 +229,47 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || (hasUserDoc() && isAdmin() && existing().storeId == userStoreId()) || isBootstrapAdmin());
-      allow list: if isBootstrapAdmin() || (hasUserDoc() && resource.data.storeId == userStoreId());
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId || 
+        isBootstrapAdmin() || 
+        isFranchiseAdminOf(existing())
+      );
+      
+      allow list: if isBootstrapAdmin() || (
+        isSignedIn() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('storeId', '') == resource.data.get('storeId', '') ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('storeId', '') == resource.data.get('parentStoreId', '') ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('parentStoreId', '') == resource.data.get('parentStoreId', '')
+        )
+      );
+      
       allow create: if isBootstrapAdmin() || 
-                      (hasUserDoc() && isAdmin() && incoming().storeId == userStoreId() && incoming().uid == userId && isValidUser(incoming())) || 
-                      (isSignedIn() && request.auth.uid == userId && incoming().uid == userId && incoming().role == 'admin' && incoming().isActive == false);
-      allow update: if isBootstrapAdmin() || 
-                      (hasUserDoc() && isAdmin() && (!existing().keys().hasAll(['storeId']) || existing().storeId == userStoreId()) && incoming().storeId == (existing().keys().hasAll(['storeId']) ? existing().storeId : incoming().storeId)) ||
-                      (request.auth.uid == userId && 
-                       (!existing().keys().hasAll(['role']) || incoming().role == existing().role) && 
-                       (!existing().keys().hasAll(['storeId']) || incoming().storeId == existing().storeId) && 
-                       (!existing().keys().hasAll(['isActive']) || incoming().isActive == existing().isActive));
-      allow delete: if isBootstrapAdmin() || (hasUserDoc() && isAdmin() && existing().storeId == userStoreId());
+                      (isSignedIn() && request.auth.uid == userId && incoming().uid == userId && incoming().get('role', 'cashier') == 'admin') ||
+                      (request.auth.uid != userId && isFranchiseAdminOf(incoming()) && isValidUser(incoming()));
+                      
+      allow update: if isBootstrapAdmin() || (
+        // Case 1: User updating their own profile
+        request.auth.uid == userId && 
+        incoming().get('role', 'cashier') == existing().get('role', 'cashier') && 
+        incoming().get('isActive', true) == existing().get('isActive', true) && 
+        (
+          incoming().get('storeId', '') == existing().get('storeId', '') || 
+          (existing().get('role', 'cashier') in ['admin', 'manager'] && isValidId(incoming().get('storeId', '')))
+        )
+      ) || (
+        // Case 2: Store Admin/Manager updating another user in the Franchise
+        request.auth.uid != userId && 
+        isFranchiseAdminOf(existing()) && 
+        isFranchiseAdminOf(incoming()) && 
+        (incoming().get('role', 'cashier') in ['admin', 'manager', 'cashier'])
+      );
+      
+      allow delete: if isBootstrapAdmin() || (
+        request.auth.uid != userId && 
+        isFranchiseAdminOf(existing())
+      );
     }
 
     match /storeSettings/{settingsId} {
@@ -232,7 +280,7 @@ service cloud.firestore {
       allow update: if (isBootstrapAdmin()) || (
         hasUserDoc() && isAdmin() && settingsId == userStoreId() && (
           // Store admins can only update brand and contact info, never license fields (ERP PROTECTION)
-          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'address', 'phone', 'logo', 'logoUrl', 'signatureUrl', 'currency', 'updatedAt', 'operatorNumbers', 'selectedOperators'])
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'address', 'phone', 'logo', 'logoUrl', 'signatureUrl', 'currency', 'updatedAt', 'operatorNumbers', 'selectedOperators', 'annexes'])
         )
       );
       allow delete: if isBootstrapAdmin();
@@ -368,16 +416,61 @@ service cloud.firestore {
       ) && incoming().timestamp == request.time;
       
       allow update: if isBootstrapAdmin() || (
-        isSignedIn() && 
-        existing().senderId == request.auth.uid && 
-        incoming().senderId == existing().senderId && 
-        incoming().storeId == existing().storeId &&
-        incoming().message is string && incoming().message.size() <= 2000 &&
-        incoming().diff(existing()).affectedKeys().hasOnly(['message', 'updatedAt'])
+        isSignedIn() && (
+          // Sender updates (e.g., editing text, or hiding message, or updating status):
+          (
+            existing().senderId == request.auth.uid && 
+            incoming().senderId == existing().senderId && 
+            incoming().storeId == existing().storeId &&
+            (
+              incoming().diff(existing()).affectedKeys().hasOnly(['message', 'updatedAt']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['message', 'updatedAt', 'deletedFor']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['deletedFor']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['opened', 'openedBy'])
+            )
+          ) ||
+          // Recipient/readers updates (e.g., opening a single-view message, hiding message):
+          (
+            (
+              (existing().type == 'direct' && existing().recipientId == request.auth.uid) ||
+              (existing().type == 'store' && existing().storeId == userStoreId()) ||
+              (existing().type == 'broadcast')
+            ) && (
+              incoming().diff(existing()).affectedKeys().hasOnly(['opened']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['openedBy']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['deletedFor']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['opened', 'openedBy', 'deletedFor'])
+            )
+          )
+        )
       );
       
       allow delete: if isBootstrapAdmin() || (
         isSignedIn() && existing().senderId == request.auth.uid
+      );
+    }
+
+    match /calls/{callId} {
+      allow get: if isSignedIn() && (
+        isBootstrapAdmin() ||
+        resource.data.callerId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid
+      );
+      allow list: if isSignedIn() && (
+        isBootstrapAdmin() ||
+        resource.data.receiverId == request.auth.uid ||
+        resource.data.callerId == request.auth.uid
+      );
+      allow create: if isSignedIn() && 
+        incoming().callerId == request.auth.uid &&
+        incoming().status == 'ringing';
+      allow update: if isSignedIn() && (
+        existing().callerId == request.auth.uid ||
+        existing().receiverId == request.auth.uid
+      );
+      allow delete: if isSignedIn() && (
+        existing().callerId == request.auth.uid ||
+        existing().receiverId == request.auth.uid
       );
     }
 

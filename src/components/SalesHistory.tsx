@@ -111,9 +111,14 @@ export default function SalesHistory() {
        items = snap.docs.map(doc => ({ ...doc.data() } as CartItem));
     }
 
+    const itemsCount = items.length || 1;
+    const tableHeight = 5 + (itemsCount * 5);
+    const afterTableHeight = 45; // total of totals, payment details, margins
+    const calculatedHeight = Math.max(100, 36 + tableHeight + afterTableHeight);
+
     const docPDF = new jsPDF({
       unit: 'mm',
-      format: [80, 200] // Thermal receipt size
+      format: [80, calculatedHeight] // Thermal receipt size
     });
 
     // POS Style Header
@@ -465,15 +470,33 @@ export default function SalesHistory() {
             <Calendar size={18} className="text-gray-400 ml-2" />
             <input 
               type="date" 
+              max="9999-12-31"
               value={dateRange.start} 
-              onChange={e => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+              onChange={e => {
+                let val = e.target.value;
+                const parts = val.split('-');
+                if (parts[0] && parts[0].length > 4) {
+                  parts[0] = parts[0].slice(0, 4);
+                  val = parts.join('-');
+                }
+                setDateRange(prev => ({ ...prev, start: val }));
+              }}
               className="bg-transparent border-none text-xs font-black uppercase outline-none"
             />
             <span className="text-gray-300">/</span>
             <input 
               type="date" 
+              max="9999-12-31"
               value={dateRange.end} 
-              onChange={e => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+              onChange={e => {
+                let val = e.target.value;
+                const parts = val.split('-');
+                if (parts[0] && parts[0].length > 4) {
+                  parts[0] = parts[0].slice(0, 4);
+                  val = parts.join('-');
+                }
+                setDateRange(prev => ({ ...prev, end: val }));
+              }}
               className="bg-transparent border-none text-xs font-black uppercase outline-none"
             />
           </div>
@@ -531,27 +554,27 @@ export default function SalesHistory() {
                     <div className="flex items-center justify-end gap-2">
                       <button 
                         onClick={() => setSelectedSale(sale)}
-                        className="p-2 text-gray-400 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all"
+                        className="p-2 text-[#4F8CFF] hover:text-white bg-[#F0F6FF] hover:bg-[#4F8CFF] border border-[#4F8CFF]/20 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm active:scale-95"
                         title="Voir les détails"
                       >
-                        <Eye size={18} />
+                        <Eye size={18} className="shrink-0" />
                       </button>
                       <button 
                         onClick={async () => {
                           setSelectedSale(sale);
                           setTimeout(() => window.print(), 500);
                         }}
-                        className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all"
+                        className="p-2 text-emerald-600 hover:text-white bg-emerald-50 hover:bg-emerald-600 border border-emerald-200 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm active:scale-95"
                         title="Imprimer le reçu"
                       >
-                        <Printer size={18} />
+                        <Printer size={18} className="shrink-0" />
                       </button>
                       <button 
                         onClick={() => handlePrintReceipt(sale)}
-                        className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all"
+                        className="p-2 text-blue-600 hover:text-white bg-blue-50 hover:bg-blue-600 border border-blue-200 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm active:scale-95"
                         title="Télécharger le reçu PDF"
                       >
-                        <FileDown size={18} />
+                        <FileDown size={18} className="shrink-0" />
                       </button>
                       {hasPermission('sales', 'delete') && (
                         <button 
@@ -570,22 +593,15 @@ export default function SalesHistory() {
           </table>
         </div>
         
-        <AnimatePresence>
-          {selectedSale && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setSelectedSale(null)}
-                className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm"
-              />
-              <motion.div 
-                initial={{ scale: 0.95, opacity: 0, y: 20 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                className="bg-white w-full max-w-md rounded-[32px] shadow-2xl relative overflow-hidden flex flex-col max-h-[85vh]"
-              >
+        {selectedSale && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div 
+              onClick={() => setSelectedSale(null)}
+              className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm"
+            />
+            <div 
+              className="bg-white w-full max-w-md rounded-[32px] shadow-2xl relative overflow-hidden flex flex-col max-h-[85vh]"
+            >
                 <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                   <div>
                     <h3 className="text-lg font-black text-gray-900 uppercase tracking-tighter">Détails de la Vente</h3>
@@ -671,16 +687,15 @@ export default function SalesHistory() {
                      PDF
                    </button>
                 </div>
-              </motion.div>
             </div>
-          )}
-        </AnimatePresence>
+          </div>
+        )}
 
         {/* Hidden Receipt for Printing (Thermal Optimized) in History */}
-        <div id="receipt-print" className="hidden print:block font-mono text-[10px] w-[80mm] mx-auto p-4 bg-white text-black leading-tight">
+        <div id="receipt-print" className="hidden print:block font-mono text-[10px] w-[80mm] mx-auto px-2 py-1 bg-white text-black leading-tight">
           {selectedSale && (
             <>
-              <div className="text-center mb-4">
+              <div className="text-center mb-2">
                 {storeSettings?.logoUrl && (
                   <img src={storeSettings.logoUrl} alt="Logo" className="w-12 h-12 mx-auto mb-2 object-contain" />
                 )}
@@ -697,7 +712,7 @@ export default function SalesHistory() {
                 <p className="text-left mt-1">Date: {selectedSale.timestamp?.toDate()?.toLocaleString()}</p>
               </div>
 
-              <div className="space-y-1 mb-4 border-t border-dashed pt-2">
+              <div className="space-y-1 mb-2 border-t border-dashed pt-2">
                 <div className="flex justify-between font-bold border-b border-dashed pb-1 mb-1 text-[8px]">
                   <span className="w-1/2">ARTICLE</span>
                   <span className="w-1/4 text-center">QTÉ</span>
@@ -741,7 +756,7 @@ export default function SalesHistory() {
                 </div>
               </div>
 
-              <div className="text-center mt-6 border-t border-dashed pt-4">
+              <div className="text-center mt-2 border-t border-dashed pt-2">
                 <p className="text-[8px] font-bold">MERCI POUR VOTRE VISITE</p>
                 <p className="text-[7px] mt-1 italic text-gray-500 underline uppercase tracking-tight">À bientôt !</p>
               </div>

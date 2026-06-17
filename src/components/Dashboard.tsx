@@ -16,12 +16,15 @@ import {
   Sparkles,
   ShieldCheck,
   FileDown,
-  Activity
+  Activity,
+  Store,
+  Globe,
+  MapPin
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import { AppContext } from '../App';
-import { collection, query, getDocs, limit, orderBy, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, getDocs, limit, orderBy, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../services/db';
 import { 
@@ -104,7 +107,68 @@ function StatCard({ title, value, icon: Icon, trend, trendValue }: any) {
 }
 
 export default function Dashboard() {
-  const { userRole, hasPermission, userProfile } = useContext(AppContext);
+  const { userRole, hasPermission, userProfile, settings, language } = useContext(AppContext);
+  const [familyStores, setFamilyStores] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!userProfile?.storeId || !settings) return;
+
+    const parentId = settings.parentStoreId || settings.id;
+    
+    const unsubscribe = onSnapshot(doc(db, 'storeSettings', parentId), (snap) => {
+      if (!snap.exists()) {
+        setFamilyStores([]);
+        return;
+      }
+      
+      const parentData = snap.data();
+      const parentStore = {
+        ...parentData,
+        id: snap.id
+      } as any;
+
+      const combined: any[] = [parentStore];
+      const customAnnexes = parentData.annexes || [];
+      
+      customAnnexes.forEach((ann: any) => {
+        if (!combined.some(s => s.id === ann.id)) {
+          combined.push({
+            id: ann.id,
+            name: ann.name,
+            address: ann.address || parentStore.address,
+            phone: ann.phone || parentStore.phone,
+            parentStoreId: parentId,
+            isActive: ann.isActive !== false,
+            isAnnexeUnit: true
+          });
+        }
+      });
+
+      combined.sort((a: any, b: any) => {
+        if (a.id === parentId) return -1;
+        if (b.id === parentId) return 1;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+
+      setFamilyStores(combined);
+    }, (err) => {
+      console.error("Error loading family stores on dashboard:", err);
+    });
+
+    return () => unsubscribe();
+  }, [userProfile?.storeId, settings]);
+
+  const handleSwitchStore = async (targetStoreId: string) => {
+    if (!auth.currentUser || !targetStoreId) return;
+    try {
+      await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+        storeId: targetStoreId
+      });
+    } catch (err) {
+      console.error("Failed to switch active store:", err);
+    }
+  };
+
   const isSuperAdmin = auth.currentUser?.email === 'anges.gildas@gmail.com' || auth.currentUser?.email === 'gildas@gmail.com';
   
   const navigate = useNavigate();
@@ -307,6 +371,9 @@ export default function Dashboard() {
     let unsubStores: (() => void) | undefined;
     let unsubUsers: (() => void) | undefined;
     let unsubSales: (() => void) | undefined;
+    let unsubSalesUser: (() => void) | undefined;
+    let unsubProductsUser: (() => void) | undefined;
+    let unsubClientsUser: (() => void) | undefined;
 
     function fetchSuperAdminData() {
       unsubStores = onSnapshot(collection(db, 'storeSettings'), (storesSnap) => {
@@ -404,74 +471,93 @@ export default function Dashboard() {
     }
 
     if (!userProfile?.storeId) return;
-    async function fetchDashboardData() {
-      try {
-        // Fetch real sales data for the chart
-        const startOfWeek = new Date();
-        startOfWeek.setDate(today.getDate() - 7);
-        startOfWeek.setHours(0, 0, 0, 0);
 
-        const salesSnap = await getDocs(query(
-          collection(db, 'sales'),
-          where('storeId', '==', userProfile.storeId),
-          where('timestamp', '>=', startOfWeek)
-        ));
+    // Real-time listener for Sales & KPI calculations
+    const startOfWeek = new Date();
+    startOfWeek.setDate(today.getDate() - 7);
+    startOfWeek.setHours(0, 0, 0, 0);
 
-        const daySales: { [key: string]: number } = {};
-        const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
-        
-        // Initialize days
-        for(let i=0; i<7; i++) {
-          const d = new Date();
-          d.setDate(today.getDate() - i);
-          daySales[days[d.getDay()]] = 0;
-        }
-
-        let total = 0;
-        salesSnap.forEach(doc => {
-          const data = doc.data();
-          const date = data.timestamp?.toDate();
-          if (date) {
-            const dayName = days[date.getDay()];
-            if (daySales[dayName] !== undefined) {
-              daySales[dayName] += data.totalAmount || 0;
-            }
-          }
-          total += data.totalAmount || 0;
-        });
-
-        const formattedChartData = Object.entries(daySales)
-          .map(([day, sales]) => ({ day, sales }))
-          .reverse();
-        
-        setChartData(formattedChartData);
-        setStats(prev => ({ 
-          ...prev, 
-          totalSales: total,
-          orders: salesSnap.size
-        }));
-
-        // Rest of the fetch...
-        try {
-          const productsSnap = await getDocs(query(collection(db, 'products'), where('storeId', '==', userProfile.storeId)));
-          const allProducts = productsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-          const stockAlerts = allProducts
-            .filter((p: any) => (p.stock || 0) <= (p.lowStockThreshold || 5))
-            .map((p: any) => ({ ...p, alertType: 'stock' }));
-          setAlerts(stockAlerts.slice(0, 5));
-          setStats(prev => ({ ...prev, products: productsSnap.size }));
-        } catch(e) {}
-
-        try {
-          const clientsSnap = await getDocs(query(collection(db, 'clients'), where('storeId', '==', userProfile.storeId)));
-          setStats(prev => ({ ...prev, customers: clientsSnap.size }));
-        } catch (e) {}
-
-      } catch (error) {
-        console.error("Dashboard fetch error:", error);
+    unsubSalesUser = onSnapshot(query(
+      collection(db, 'sales'),
+      where('storeId', '==', userProfile.storeId),
+      where('timestamp', '>=', startOfWeek)
+    ), (salesSnap) => {
+      const daySales: { [key: string]: number } = {};
+      const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+      
+      // Initialize days
+      for(let i=0; i<7; i++) {
+        const d = new Date();
+        d.setDate(today.getDate() - i);
+        daySales[days[d.getDay()]] = 0;
       }
-    }
-    fetchDashboardData();
+
+      let total = 0;
+      salesSnap.forEach(doc => {
+        const data = doc.data();
+        const date = data.timestamp?.toDate ? data.timestamp.toDate() : (data.timestamp ? new Date(data.timestamp) : null);
+        if (date) {
+          const dayName = days[date.getDay()];
+          if (daySales[dayName] !== undefined) {
+            daySales[dayName] += data.totalAmount || 0;
+          }
+        }
+        total += data.totalAmount || 0;
+      });
+
+      const formattedChartData = Object.entries(daySales)
+        .map(([day, sales]) => ({ day, sales }))
+        .reverse();
+      
+      setChartData(formattedChartData);
+      setStats(prev => ({ 
+        ...prev, 
+        totalSales: total,
+        orders: salesSnap.size
+      }));
+    }, (err) => {
+      console.error("Dashboard real-time sales query error:", err);
+    });
+
+    // Real-time listener for Products & critical inventory stock alerts
+    unsubProductsUser = onSnapshot(query(
+      collection(db, 'products'),
+      where('storeId', '==', userProfile.storeId)
+    ), (productsSnap) => {
+      const allProducts = productsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      const stockAlerts = allProducts
+        .filter((p: any) => (p.stock || 0) <= (p.lowStockThreshold || 5))
+        .map((p: any) => ({ ...p, alertType: 'stock' }));
+      setAlerts(stockAlerts.slice(0, 5));
+      setStats(prev => ({ 
+        ...prev, 
+        products: productsSnap.size
+      }));
+    }, (err) => {
+      console.error("Dashboard real-time products query error:", err);
+    });
+
+    // Real-time listener for Clients count
+    unsubClientsUser = onSnapshot(query(
+      collection(db, 'clients'),
+      where('storeId', '==', userProfile.storeId)
+    ), (clientsSnap) => {
+      setStats(prev => ({ 
+        ...prev, 
+        customers: clientsSnap.size
+      }));
+    }, (err) => {
+      console.error("Dashboard real-time clients query error:", err);
+    });
+
+    return () => {
+      if (unsubStores) unsubStores();
+      if (unsubUsers) unsubUsers();
+      if (unsubSales) unsubSales();
+      if (unsubSalesUser) unsubSalesUser();
+      if (unsubProductsUser) unsubProductsUser();
+      if (unsubClientsUser) unsubClientsUser();
+    };
   }, [userProfile?.storeId]);
 
   const canViewReports = hasPermission('reports', 'read');
@@ -523,6 +609,77 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Visual Branch/Annexe Switcher for Main Store Admin */}
+      {((userRole === 'admin' || userProfile?.role === 'admin') && !isSuperAdmin && familyStores.length > 1) && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-r from-orange-500/10 to-transparent p-6 sm:p-8 rounded-[32px] border border-orange-200/40 relative overflow-hidden flex flex-col lg:flex-row lg:items-center justify-between gap-6"
+        >
+          {/* Subtle decorative background globe */}
+          <div className="absolute right-4 -bottom-10 opacity-5 pointer-events-none">
+            <Globe size={180} />
+          </div>
+
+          <div className="space-y-2 relative z-10 text-left max-w-xl">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-[10px] font-black uppercase tracking-widest">
+              <Store size={12} />
+              <span>{language === 'fr' ? 'Sélecteur de Boutique' : 'Store Selector'}</span>
+            </span>
+            <h3 className="text-xl font-bold font-sans tracking-tight text-slate-900">
+              {language === 'fr' 
+                ? 'Gestion Multi-Boutique (Annexes & Filiales)' 
+                : 'Multi-Store Management (Branches)'}
+            </h3>
+            <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+              {language === 'fr' 
+                ? 'Basculez instantanément vers l\'une de vos succursales ou filiales pour consulter l\'ensemble de son système (stocks, transactions, comptabilité et personnel).'
+                : 'Instantly swap to one of your branches or subsidiaries to view its complete system (inventory, sales, accounting and personnel).'}
+            </p>
+          </div>
+
+          <div className="relative z-10 shrink-0 w-full lg:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+            <div className="bg-white px-5 py-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-center min-w-[280px]">
+              <span className="text-[9px] font-black uppercase text-gray-400 tracking-widest leading-none mb-2">Boutique Active</span>
+              <div className="relative flex items-center">
+                <Store size={16} className="text-orange-500 absolute left-0" />
+                <select
+                  value={userProfile?.storeId}
+                  onChange={(e) => handleSwitchStore(e.target.value)}
+                  className="w-full text-sm font-black text-[#111827] bg-transparent border-none outline-none pl-6 pr-4 cursor-pointer select-none"
+                >
+                  {familyStores.map(s => (
+                    <option key={`dashboard-store-sel-${s.id}`} value={s.id} className="font-bold text-slate-800">
+                      {s.name} {s.id === (settings?.parentStoreId || settings?.id) ? `(${language === 'fr' ? 'Principale' : 'Main'})` : `(${language === 'fr' ? 'Annexe' : 'Branch'})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Quick Switch Button Pills */}
+            <div className="hidden sm:flex items-center gap-2 max-w-sm overflow-x-auto py-1">
+              {familyStores.slice(0, 3).map((s) => {
+                const isSelected = s.id === userProfile?.storeId;
+                return (
+                  <button
+                    key={`quick-pill-${s.id}`}
+                    onClick={() => handleSwitchStore(s.id)}
+                    className={`px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
+                      isSelected 
+                        ? 'bg-orange-500 text-white shadow-md shadow-orange-500/20' 
+                        : 'bg-white hover:bg-slate-50 border border-gray-100 text-slate-600'
+                    }`}
+                  >
+                    {s.name.split(' ').slice(0, 2).join(' ')}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* Fast Shortcuts & Command Center Banner */}
       {!isSuperAdmin && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -570,29 +727,29 @@ export default function Dashboard() {
 
       {/* Interactive Monthly Revenue Goal Tracker */}
       {!isSuperAdmin && canViewReports && (
-        <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-[32px] p-6 sm:p-8 border border-white/5 shadow-xl relative overflow-hidden">
+        <div className="bg-white text-slate-900 rounded-[32px] p-6 sm:p-8 border border-gray-100 shadow-sm relative overflow-hidden">
           {/* Accent decoration overlay */}
-          <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-radial from-orange-500/10 to-transparent pointer-events-none" />
+          <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-radial from-orange-500/5 to-transparent pointer-events-none" />
           
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
             <div className="space-y-2 text-left">
-              <div className="flex items-center gap-2 text-orange-400">
+              <div className="flex items-center gap-2 text-orange-600">
                 <Trophy size={18} />
                 <span className="text-[10px] font-black uppercase tracking-widest">Suivi d'objectif mensuel</span>
               </div>
               
               <div className="flex items-center gap-3.5 flex-wrap">
-                <h3 className="text-xl sm:text-2xl font-black">
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900">
                   Objectif : {salesGoal.toLocaleString('de-DE')} FCFA
                 </h3>
                 
                 {isEditingGoal ? (
-                  <div className="flex items-center gap-2 bg-white/10 p-1 rounded-xl border border-white/10">
+                  <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
                     <input
                       type="number"
                       value={newGoalInput}
                       onChange={(e) => setNewGoalInput(e.target.value)}
-                      className="bg-transparent text-white placeholder-white/30 text-xs font-bold outline-none px-2 w-28 text-left border-none"
+                      className="bg-transparent text-slate-900 placeholder-slate-400 text-xs font-bold outline-none px-2 w-28 text-left border-none"
                       placeholder="Nouveau but"
                     />
                     <button
@@ -603,7 +760,7 @@ export default function Dashboard() {
                     </button>
                     <button
                       onClick={() => setIsEditingGoal(false)}
-                      className="text-white/50 hover:text-white text-[11px] font-bold px-1"
+                      className="text-slate-500 hover:text-slate-950 text-[11px] font-bold px-1"
                     >
                       Annuler
                     </button>
@@ -611,33 +768,33 @@ export default function Dashboard() {
                 ) : (
                   <button
                     onClick={() => { setNewGoalInput(salesGoal.toString()); setIsEditingGoal(true); }}
-                    className="flex items-center gap-1 px-3 py-1 bg-white/10 hover:bg-white/20 text-white/80 hover:text-white rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all"
+                    className="flex items-center gap-1 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all"
                   >
-                    <Edit3 size={11} className="text-orange-400" />
+                    <Edit3 size={11} className="text-orange-500" />
                     <span>Modifier le but</span>
                   </button>
                 )}
               </div>
 
-              <p className="text-slate-300 text-xs font-semibold leading-relaxed max-w-xl">
+              <p className="text-slate-500 text-xs font-semibold leading-relaxed max-w-xl">
                 {stats.totalSales >= salesGoal ? (
-                  <span className="text-green-400 font-bold">✨ Incroyable ! Vous avez franchi votre objectif de vente de ce mois-ci ! Continuez ainsi.</span>
+                  <span className="text-green-600 font-bold">✨ Incroyable ! Vous avez franchi votre objectif de vente de ce mois-ci ! Continuez ainsi.</span>
                 ) : (
-                  <span>Il vous reste <strong className="text-orange-400">{(salesGoal - stats.totalSales).toLocaleString('de-DE')} F</strong> à comptabiliser pour atteindre l'objectif ciblé de ce mois.</span>
+                  <span>Il vous reste <strong className="text-orange-600">{(salesGoal - stats.totalSales).toLocaleString('de-DE')} F</strong> à comptabiliser pour atteindre l'objectif ciblé de ce mois.</span>
                 )}
               </p>
             </div>
 
             <div className="flex flex-col items-center md:items-end gap-1.5 min-w-[120px]">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Progression</span>
-              <span className="text-3xl sm:text-4xl font-black text-white italic tracking-tighter">
+              <span className="text-3xl sm:text-4xl font-black text-slate-900 italic tracking-tighter">
                 {Math.min(100, Math.round((stats.totalSales / salesGoal) * 100))}%
               </span>
             </div>
           </div>
 
           {/* Progress bar alignment */}
-          <div className="mt-6 w-full h-3 bg-white/10 rounded-full overflow-hidden p-0.5 border border-white/5">
+          <div className="mt-6 w-full h-3 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/50">
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${Math.min(100, (stats.totalSales / salesGoal) * 100)}%` }}

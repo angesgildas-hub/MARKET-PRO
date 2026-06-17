@@ -57,6 +57,12 @@ export default function SuperAdmin() {
   const [editedStoreAddress, setEditedStoreAddress] = useState('');
   const [editedStoreParentId, setEditedStoreParentId] = useState('');
 
+  // Annex state for SuperAdmin creation
+  const [newAnnexeName, setNewAnnexeName] = useState('');
+  const [newAnnexeZone, setNewAnnexeZone] = useState('');
+  const [newAnnexeAddress, setNewAnnexeAddress] = useState('');
+  const [newAnnexePhone, setNewAnnexePhone] = useState('');
+
   useEffect(() => {
     if (selectedStore) {
       setEditedStoreName(selectedStore.name || '');
@@ -772,6 +778,87 @@ export default function SuperAdmin() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCreateAnnexe = async () => {
+    if (!selectedStore) return;
+    if (!newAnnexeName.trim() || !newAnnexeZone.trim()) {
+      showAlert("Le nom et la zone de l'annexe sont requis.", "error");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const storeRef = doc(db, 'storeSettings', selectedStore.id);
+      
+      const newAnnexe = {
+        id: 'annexe_' + Math.random().toString(36).substring(2, 10),
+        name: newAnnexeName.trim(),
+        zone: newAnnexeZone.trim(),
+        address: newAnnexeAddress.trim(),
+        phone: newAnnexePhone.trim(),
+        isActive: true,
+        createdAt: new Date().toISOString()
+      };
+
+      const revisedAnnexes = [...((selectedStore as any).annexes || []), newAnnexe];
+
+      await updateDoc(storeRef, {
+        annexes: revisedAnnexes,
+        updatedAt: serverTimestamp()
+      });
+
+      setSelectedStore(prev => prev ? {
+        ...prev,
+        annexes: revisedAnnexes
+      } : null);
+
+      // Clean inputs
+      setNewAnnexeName('');
+      setNewAnnexeZone('');
+      setNewAnnexeAddress('');
+      setNewAnnexePhone('');
+
+      showAlert("Annexe créée avec succès pour cette boutique.", "success");
+    } catch (err: any) {
+      console.error("Error creating annexe:", err);
+      showAlert("Erreur lors de la création de l'annexe: " + err.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteAnnexe = async (annexeId: string) => {
+    if (!selectedStore) return;
+    
+    showConfirm(
+      "Confirmer la suppression",
+      "Êtes-vous sûr de vouloir supprimer cette annexe ? Cette action est irréversible.",
+      async () => {
+        try {
+          setLoading(true);
+          const storeRef = doc(db, 'storeSettings', selectedStore.id);
+          const revisedAnnexes = ((selectedStore as any).annexes || []).filter((a: any) => a.id !== annexeId);
+
+          await updateDoc(storeRef, {
+            annexes: revisedAnnexes,
+            updatedAt: serverTimestamp()
+          });
+
+          setSelectedStore(prev => prev ? {
+            ...prev,
+            annexes: revisedAnnexes
+          } : null);
+
+          showAlert("Annexe supprimée de la boutique.", "success");
+        } catch (err: any) {
+          console.error("Error deleting annexe:", err);
+          showAlert("Erreur lors de la suppression de l'annexe: " + err.message, "error");
+        } finally {
+          setLoading(false);
+        }
+      }
+    );
   };
 
   const handleDeleteStore = async (storeId: string, storeName: string) => {
@@ -2717,6 +2804,113 @@ RewriteRule ^(.*)$ https://ais-pre-6...run.app/$1 [L,R=301,NE,QSA]`}
                           </div>
                         </div>
                       ))}
+                    </div>
+
+                    {/* Annexes (Filiales) Management Section */}
+                    <div className="mt-12 pt-8 border-t border-gray-100">
+                      <div className="flex items-center justify-between mb-6">
+                        <div>
+                          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Annexes & Filiales de la Boutique</h3>
+                          <p className="text-[10px] text-gray-500 font-medium">Les succursales créées pourront être configurées par zone par l'administrateur principal de la boutique.</p>
+                        </div>
+                        <span className="px-3 py-1 bg-slate-100 rounded-full text-[10px] font-black text-slate-700">
+                          {((selectedStore as any).annexes || []).length} Succursale(s)
+                        </span>
+                      </div>
+
+                      {/* Annex list */}
+                      <div className="space-y-3 mb-6">
+                        {((selectedStore as any).annexes || []).length === 0 ? (
+                          <div className="text-center py-8 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-100">
+                            <Globe size={32} className="mx-auto text-gray-300 mb-2" />
+                            <p className="text-xs text-gray-400 font-bold">Aucune annexe configurée pour le moment.</p>
+                            <p className="text-[10px] text-gray-400 font-medium mt-0.5">Complétez le formulaire ci-dessous pour en ajouter une.</p>
+                          </div>
+                        ) : (
+                          ((selectedStore as any).annexes || []).map((annexe: any) => (
+                            <div key={`modal-annexe-${annexe.id}`} className="flex items-center justify-between p-5 bg-gray-50 rounded-3xl border border-gray-100">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <h4 className="font-black text-gray-900 text-sm tracking-tight">{annexe.name}</h4>
+                                  <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-[8px] font-black uppercase tracking-wider">
+                                    {annexe.zone}
+                                  </span>
+                                </div>
+                                <div className="flex flex-col gap-0.5 mt-1 text-[10px] text-gray-500 font-semibold font-sans">
+                                  {annexe.address && <p>📍 {annexe.address}</p>}
+                                  {annexe.phone && <p>📞 {annexe.phone}</p>}
+                                </div>
+                              </div>
+                              <button 
+                                onClick={() => handleDeleteAnnexe(annexe.id)}
+                                className="w-9 h-9 rounded-xl bg-red-50 hover:bg-red-600 text-red-600 hover:text-white flex items-center justify-center transition-all cursor-pointer"
+                                title="Supprimer l'annexe"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {/* Creator Form */}
+                      <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100/60">
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-4">Créer une nouvelle annexe</span>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Nom de l'annexe *</label>
+                            <input 
+                              type="text"
+                              placeholder="ex: Dakar Plateau, Annexe Nord"
+                              value={newAnnexeName}
+                              onChange={(e) => setNewAnnexeName(e.target.value)}
+                              className="w-full text-xs px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-orange-500/10 transition-all text-slate-800"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Zone Géographique / Ville *</label>
+                            <input 
+                              type="text"
+                              placeholder="ex: Dakar, Thiès, Zone A"
+                              value={newAnnexeZone}
+                              onChange={(e) => setNewAnnexeZone(e.target.value)}
+                              className="w-full text-xs px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-orange-500/10 transition-all text-slate-800"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Adresse de l'annexe (Optionnel)</label>
+                            <input 
+                              type="text"
+                              placeholder="ex: Rue 12, Avenue Lamine Gueye"
+                              value={newAnnexeAddress}
+                              onChange={(e) => setNewAnnexeAddress(e.target.value)}
+                              className="w-full text-xs px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-orange-500/10 transition-all text-slate-800"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Téléphone de l'annexe (Optionnel)</label>
+                            <input 
+                              type="text"
+                              placeholder="ex: +221 77 123 45 67"
+                              value={newAnnexePhone}
+                              onChange={(e) => setNewAnnexePhone(e.target.value)}
+                              className="w-full text-xs px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl font-sans font-bold outline-none focus:ring-2 focus:ring-orange-500/10 transition-all text-slate-800"
+                            />
+                          </div>
+                        </div>
+
+                        <button 
+                          onClick={handleCreateAnnexe}
+                          className="w-full py-3 bg-slate-900 hover:bg-black text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <Globe size={14} />
+                          Enregistrer & Créer l'Annexe
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
