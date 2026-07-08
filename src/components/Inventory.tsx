@@ -143,7 +143,7 @@ export default function Inventory() {
     setEditingProduct(null);
   };
 
-  const isSuperAdmin = auth.currentUser?.email === 'anges.gildas@gmail.com' || auth.currentUser?.email === 'gildas@gmail.com';
+  const isSuperAdmin = ['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((auth.currentUser?.email || '').trim().toLowerCase());
 
   const handleDelete = async (id: string) => {
     if (!hasPermission('inventory', 'delete')) {

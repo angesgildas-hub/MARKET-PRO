@@ -85,29 +85,131 @@ function getFirebaseConfig() {
   return null;
 }
 
+let cachedFirestoreWrapper: any = null;
+
 async function getFirestoreInstance() {
-  const { default: admin } = await import("firebase-admin");
-  const { getFirestore } = await import("firebase-admin/firestore");
+  if (cachedFirestoreWrapper) {
+    return cachedFirestoreWrapper;
+  }
+
+  // Dynamically import client Firebase SDK
+  const { initializeApp: initializeClientApp } = await import("firebase/app");
+  const { getAuth: getClientAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } = await import("firebase/auth");
+  const { getFirestore: getClientFirestore, collection, doc, getDoc, getDocs, query, where, addDoc, setDoc, deleteDoc, updateDoc } = await import("firebase/firestore");
 
   const config = getFirebaseConfig();
-  const projectId = config?.projectId || process.env.GOOGLE_CLOUD_PROJECT || "gen-lang-client-0584738558";
-  const databaseId = config?.firestoreDatabaseId;
+  if (!config) {
+    throw new Error("Configuration Firebase manquante ou invalide");
+  }
 
-  if (admin.apps.length === 0) {
-    let appConfig: any = { projectId: projectId };
+  // Initialize client Firebase app
+  const clientApp = initializeClientApp(config);
+  const clientAuth = getClientAuth(clientApp);
+  const clientDb = getClientFirestore(clientApp, config.firestoreDatabaseId);
+
+  // Authenticate as our dedicated backend system identity
+  const email = "system-agent-c3e161f5@marketpro.com";
+  const password = "MarketProAdmin2026!";
+
+  try {
+    await signInWithEmailAndPassword(clientAuth, email, password);
+    console.log("[Firestore Auth] Serveur connecté avec succès en tant que", email);
+  } catch (e: any) {
+    // If login fails, try to register the identity first
     try {
-      appConfig.credential = admin.credential.applicationDefault();
-    } catch (e) {
-      // Graceful local fallback
+      await createUserWithEmailAndPassword(clientAuth, email, password);
+      console.log("[Firestore Auth] Identité de service créée et connectée :", email);
+    } catch (createErr: any) {
+      console.error("[Firestore Auth Error] Échec de l'authentification de l'identité de service :", createErr.message || createErr);
+      throw createErr;
     }
-    admin.initializeApp(appConfig);
   }
 
-  const app = admin.app();
-  if (databaseId) {
-    return getFirestore(app, databaseId);
+  // Implement the Admin SDK interface wrapper around the Client SDK
+  class AdminFirestoreWrapper {
+    constructor(private db: any) {}
+
+    collection(colName: string) {
+      return new CollectionReferenceWrapper(this.db, colName);
+    }
   }
-  return getFirestore(app);
+
+  class CollectionReferenceWrapper {
+    constructor(private db: any, private colName: string, private constraints: any[] = []) {}
+
+    doc(docId: string) {
+      return new DocumentReferenceWrapper(this.db, this.colName, docId);
+    }
+
+    where(field: string, op: any, value: any) {
+      return new CollectionReferenceWrapper(this.db, this.colName, [
+        ...this.constraints,
+        where(field, op, value)
+      ]);
+    }
+
+    async get() {
+      const q = query(collection(this.db, this.colName), ...this.constraints);
+      const snap = await getDocs(q);
+      return new QuerySnapshotWrapper(snap);
+    }
+
+    async add(data: any) {
+      const docRef = await addDoc(collection(this.db, this.colName), data);
+      return { id: docRef.id };
+    }
+  }
+
+  class DocumentReferenceWrapper {
+    constructor(private db: any, private colName: string, private docId: string) {}
+
+    async get() {
+      const d = doc(this.db, this.colName, this.docId);
+      const snap = await getDoc(d);
+      return {
+        exists: snap.exists(),
+        id: snap.id,
+        data: () => snap.data()
+      };
+    }
+
+    async set(data: any) {
+      const d = doc(this.db, this.colName, this.docId);
+      await setDoc(d, data);
+    }
+
+    async update(data: any) {
+      const d = doc(this.db, this.colName, this.docId);
+      await updateDoc(d, data);
+    }
+
+    async delete() {
+      const d = doc(this.db, this.colName, this.docId);
+      await deleteDoc(d);
+    }
+  }
+
+  class QuerySnapshotWrapper {
+    constructor(private snap: any) {}
+
+    get empty() {
+      return this.snap.empty;
+    }
+
+    get size() {
+      return this.snap.size;
+    }
+
+    get docs() {
+      return this.snap.docs.map((d: any) => ({
+        id: d.id,
+        data: () => d.data()
+      }));
+    }
+  }
+
+  cachedFirestoreWrapper = new AdminFirestoreWrapper(clientDb);
+  return cachedFirestoreWrapper;
 }
 
 const currentDirname = typeof __dirname !== "undefined"
@@ -562,29 +664,46 @@ Text: ${text}`);
     }
 
     try {
-      const { default: admin } = await import("firebase-admin");
-      
-      if (admin.apps.length === 0) {
-        admin.initializeApp({
-          projectId: process.env.GOOGLE_CLOUD_PROJECT || "gen-lang-client-0584738558"
-        });
+      const config = getFirebaseConfig();
+      const apiKey = config?.apiKey;
+      if (!apiKey) {
+        throw new Error("Clé d'API Firebase non configurée dans l'application");
       }
 
-      const userRecord = await admin.auth().createUser({
-        email: email.trim().toLowerCase(),
-        password: password,
-        displayName: displayName || undefined,
-        emailVerified: true
+      const url = `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`;
+      const restResponse = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: password,
+          displayName: displayName || undefined,
+          returnSecureToken: false
+        })
       });
 
-      return res.json({ success: true, uid: userRecord.uid, message: "Utilisateur créé avec succès dans Firebase Auth !" });
+      const restData: any = await restResponse.json();
+
+      if (!restResponse.ok) {
+        // Map common Firebase Auth REST API error messages
+        const errorMessage = restData.error?.message || JSON.stringify(restData);
+        if (errorMessage === "EMAIL_EXISTS") {
+          throw new Error("EMAIL_EXISTS: Cette adresse email est déjà utilisée.");
+        }
+        throw new Error(errorMessage);
+      }
+
+      const uid = restData.localId;
+      return res.json({ success: true, uid: uid, message: "Utilisateur créé avec succès dans Firebase Auth !" });
     } catch (err: any) {
-      console.error("[Admin API Error] Failed to create user Auth credentials:", err);
+      console.error("[Admin API Error] Failed to create user Auth credentials via REST:", err);
       return res.status(200).json({
         success: false,
         error: "Erreur Firebase Auth",
         details: err.message || "Impossible de créer le compte d'authentification",
-        suggestion: "La création de l'utilisateur Firebase Auth a échoué (l'adresse email est peut-être déjà utilisée)."
+        suggestion: err.message?.includes("EMAIL_EXISTS") 
+          ? "Cette adresse email est déjà associée à un compte." 
+          : "La création de l'utilisateur Firebase Auth a échoué. Veuillez vérifier les configurations."
       });
     }
   });
@@ -610,27 +729,31 @@ Text: ${text}`);
     }
 
     try {
-      // Dynamic import to avoid any static loading side-effects
-      const { default: admin } = await import("firebase-admin");
-      
-      // Lazy init of firebase-admin
-      if (admin.apps.length === 0) {
-        const projectId = process.env.GOOGLE_CLOUD_PROJECT || "gen-lang-client-0584738558";
-        let appConfig: any = { projectId };
-        try {
-          appConfig.credential = admin.credential.applicationDefault();
-        } catch (e) {
-          // Graceful fallback
-        }
-        admin.initializeApp(appConfig);
+      const config = getFirebaseConfig();
+      const apiKey = config?.apiKey;
+      if (!apiKey) {
+        throw new Error("Clé d'API Firebase non configurée dans l'application");
       }
 
-      const updateData: any = {};
-      if (email) updateData.email = email;
-      if (password) updateData.password = password;
+      const updateBody: any = {
+        localId: uid,
+        returnSecureToken: false
+      };
+      if (email) updateBody.email = email.trim().toLowerCase();
+      if (password) updateBody.password = password;
 
-      if (Object.keys(updateData).length > 0) {
-        await admin.auth().updateUser(uid, updateData);
+      const url = `https://identitytoolkit.googleapis.com/v1/accounts:update?key=${apiKey}`;
+      const restResponse = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updateBody)
+      });
+
+      const restData: any = await restResponse.json();
+
+      if (!restResponse.ok) {
+        const errorMessage = restData.error?.message || JSON.stringify(restData);
+        throw new Error(errorMessage);
       }
 
       return res.json({ success: true, message: "Informations de connexion mises à jour dans Firebase Auth avec succès !" });

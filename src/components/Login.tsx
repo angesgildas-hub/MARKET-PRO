@@ -11,7 +11,7 @@ import {
   sendPasswordResetEmail,
   signOut
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp, collection, addDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import { AppContext } from '../App';
 import { StoreSettings } from '../types';
 import { Link, useNavigate } from 'react-router-dom';
@@ -117,11 +117,37 @@ export default function Login() {
   }, [auth.currentUser]);
 
   const syncUserProfile = async (user: any, name?: string, loginPassword?: string) => {
-    const userDocRef = doc(db, 'users', user.uid);
-    const userDoc = await getDoc(userDocRef);
+    let userDocRef = doc(db, 'users', user.uid);
+    let userDoc = await getDoc(userDocRef);
     
     const privilegedAdmins = ['anges.gildas@gmail.com', 'gildas@gmail.com'];
-    const isPrivileged = privilegedAdmins.includes(user.email || '');
+    const userEmailNormalized = (user.email || '').trim().toLowerCase();
+    const isPrivileged = privilegedAdmins.includes(userEmailNormalized);
+
+    // If document doesn't exist by UID, try searching by email to find a manually created account
+    if (!userDoc.exists() && userEmailNormalized) {
+      try {
+        const q = query(collection(db, 'users'), where('email', '==', userEmailNormalized));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const existingDoc = snap.docs[0];
+          const existingData = existingDoc.data();
+          
+          // Copy pre-existing account details to the new UID document
+          await setDoc(userDocRef, {
+            ...existingData,
+            uid: user.uid // Link to the new Auth UID
+          }, { merge: true });
+          
+          // Fetch the updated document
+          userDoc = await getDoc(userDocRef);
+          console.log("Successfully linked existing user document by email to new Firebase Auth UID.");
+        }
+      } catch (err) {
+        console.error("Error looking up/migrating user by email:", err);
+      }
+    }
+
     const storeId = isPrivileged ? 'main' : (userDoc.exists() ? (userDoc.data().storeId || user.uid) : user.uid);
 
     if (userDoc.exists()) {

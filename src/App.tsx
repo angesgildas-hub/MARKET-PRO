@@ -791,13 +791,13 @@ function Sidebar() {
   ];
 
   const privilegedAdmins = ['anges.gildas@gmail.com', 'gildas@gmail.com'];
-  if (privilegedAdmins.includes(auth.currentUser?.email || '')) {
+  if (privilegedAdmins.includes((auth.currentUser?.email || '').trim().toLowerCase())) {
     menuItems.push({ icon: ShieldAlert, label: (t as any).super_admin || 'Super Admin', path: '/super-admin', id: 'super-admin', module: 'none' });
   }
 
   const filteredItems = menuItems.filter(item => {
     if (item.id === 'chat') return true;
-    const isSuperAdmin = auth.currentUser?.email === 'anges.gildas@gmail.com' || auth.currentUser?.email === 'gildas@gmail.com';
+    const isSuperAdmin = ['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((auth.currentUser?.email || '').trim().toLowerCase());
     if (isSuperAdmin) {
       if (item.id === 'super-admin' || item.id === 'settings') return true;
       let keyToCheck = item.module || item.id;
@@ -933,7 +933,7 @@ function AppRoutes({
   }, [user?.uid, userProfile, location.pathname, hasRedirected]);
 
   const hasAccess = (module: string) => {
-    const isSuperAdmin = auth.currentUser?.email === 'anges.gildas@gmail.com' || auth.currentUser?.email === 'gildas@gmail.com';
+    const isSuperAdmin = ['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((auth.currentUser?.email || '').trim().toLowerCase());
     if (isSuperAdmin) {
       if (module === 'super-admin' || module === 'settings') return true;
       let keyToCheck = module;
@@ -1020,7 +1020,7 @@ function AppRoutes({
               <Route path="/clients" element={hasAccess('clients') ? <PageTransition><Clients /></PageTransition> : <Navigate to="/" />} />
               <Route path="/settings" element={hasAccess('settings') ? <PageTransition><Settings /></PageTransition> : <Navigate to="/" />} />
               <Route path="/chat" element={<PageTransition><Chat /></PageTransition>} />
-              <Route path="/super-admin" element={(auth.currentUser?.email === 'anges.gildas@gmail.com' || auth.currentUser?.email === 'gildas@gmail.com') ? <PageTransition><SuperAdmin /></PageTransition> : <Navigate to="/" />} />
+              <Route path="/super-admin" element={['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((auth.currentUser?.email || '').trim().toLowerCase()) ? <PageTransition><SuperAdmin /></PageTransition> : <Navigate to="/" />} />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </AnimatePresence>
@@ -1095,7 +1095,7 @@ export default function App() {
   });
 
   const hasPermission = (module: string, action: 'read' | 'create' | 'update' | 'delete'): boolean => {
-    const isSuperAdmin = auth.currentUser?.email === 'anges.gildas@gmail.com';
+    const isSuperAdmin = ['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((auth.currentUser?.email || '').trim().toLowerCase());
     if (isSuperAdmin) {
       if (module === 'settings' || module === 'super-admin' || module === 'none') return true;
       if (!userProfile?.permissions) return true; // Default to true as they are the administrator
@@ -1278,7 +1278,7 @@ export default function App() {
 
           if (config.isAutoRedirectEnabled && config.publicAccessUrl) {
             const targetUrl = config.publicAccessUrl;
-            const isSuperAdminEmail = auth.currentUser?.email === 'anges.gildas@gmail.com' || auth.currentUser?.email === 'gildas@gmail.com';
+            const isSuperAdminEmail = ['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((auth.currentUser?.email || '').trim().toLowerCase());
             const isSuperAdminPath = window.location.pathname.includes('/super-admin');
             const isLoginPage = window.location.pathname.includes('/login') || window.location.pathname.includes('/auth');
             const isLocalhost = window.location.hostname === 'localhost' || 
@@ -1319,7 +1319,7 @@ export default function App() {
             const config = JSON.parse(cached);
             if (config.isAutoRedirectEnabled && config.publicAccessUrl) {
               const targetUrl = config.publicAccessUrl;
-              const isSuperAdminEmail = auth.currentUser?.email === 'anges.gildas@gmail.com' || auth.currentUser?.email === 'gildas@gmail.com';
+              const isSuperAdminEmail = ['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((auth.currentUser?.email || '').trim().toLowerCase());
               const isSuperAdminPath = window.location.pathname.includes('/super-admin');
               const isLoginPage = window.location.pathname.includes('/login') || window.location.pathname.includes('/auth');
               const isLocalhost = window.location.hostname === 'localhost' || 

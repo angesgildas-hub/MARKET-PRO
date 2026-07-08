@@ -295,7 +295,8 @@ export default function Settings() {
   });
 
   const getUserDefaultPermissions = (email: string): UserPermissions => {
-    if (email === 'anges.gildas@gmail.com' || email === 'gildas@gmail.com') {
+    const emailNorm = (email || '').trim().toLowerCase();
+    if (emailNorm === 'anges.gildas@gmail.com' || emailNorm === 'gildas@gmail.com') {
       return fullAdminPermissions();
     }
     return defaultPermissions();
@@ -690,7 +691,7 @@ export default function Settings() {
     }
   };
 
-  const isSuperAdmin = auth.currentUser?.email === 'anges.gildas@gmail.com' || auth.currentUser?.email === 'gildas@gmail.com';
+  const isSuperAdmin = ['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((auth.currentUser?.email || '').trim().toLowerCase());
 
   const handleDeleteUser = async (uid: string) => {
     const userToDelete = users.find(u => u.uid === uid);

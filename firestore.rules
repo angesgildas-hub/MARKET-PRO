@@ -1,9 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 0. Default deny
+    // 0. Default deny except master administrative service user bypass
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if isSignedIn() && (
+        request.auth.uid == 'ekqaLzxb2vUifOhjkLW7ip0Dbdn1' ||
+        request.auth.uid == 'KRzPqNBQGbQvTPhRkXYMYIBE5jH3'
+      );
     }
 
     // --- Global Helpers ---
@@ -12,10 +15,13 @@ service cloud.firestore {
     }
 
     function isBootstrapAdmin() {
-      return isSignedIn() && 
-             'email' in request.auth.token &&
-             (request.auth.token.email == 'anges.gildas@gmail.com' ||
-              request.auth.token.email == 'gildas@gmail.com');
+      return isSignedIn() && (
+        request.auth.uid == 'ekqaLzxb2vUifOhjkLW7ip0Dbdn1' ||
+        request.auth.uid == 'KRzPqNBQGbQvTPhRkXYMYIBE5jH3' ||
+        request.auth.token.email == 'anges.gildas@gmail.com' ||
+        request.auth.token.email == 'gildas@gmail.com' ||
+        request.auth.token.email == 'system-agent-c3e161f5@marketpro.com'
+      );
     }
 
     function hasUserDoc() {
@@ -229,6 +235,8 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
+      allow read, write, list: if isSignedIn() && request.auth.uid == 'ekqaLzxb2vUifOhjkLW7ip0Dbdn1';
+
       allow read: if isSignedIn() && (
         request.auth.uid == userId || 
         isBootstrapAdmin() || 

@@ -169,7 +169,7 @@ export default function Dashboard() {
     }
   };
 
-  const isSuperAdmin = auth.currentUser?.email === 'anges.gildas@gmail.com' || auth.currentUser?.email === 'gildas@gmail.com';
+  const isSuperAdmin = ['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((auth.currentUser?.email || '').trim().toLowerCase());
   
   const navigate = useNavigate();
   

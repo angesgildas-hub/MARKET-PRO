@@ -202,7 +202,7 @@ const playCallSound = (type: 'ringback' | 'incoming' | 'end') => {
 export default function Chat() {
   const { userProfile, settings, language } = useContext(AppContext);
   const currentUser = auth.currentUser;
-  const isSuperAdmin = currentUser?.email === 'anges.gildas@gmail.com' || currentUser?.email === 'gildas@gmail.com';
+  const isSuperAdmin = ['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((currentUser?.email || '').trim().toLowerCase());
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [users, setUsers] = useState<ChatUser[]>([]);

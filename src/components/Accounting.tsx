@@ -39,7 +39,7 @@ import {
 
 export default function Accounting() {
   const { userRole, settings, hasPermission, userProfile } = useContext(AppContext);
-  const isSuperAdmin = auth.currentUser?.email === 'anges.gildas@gmail.com' || auth.currentUser?.email === 'gildas@gmail.com';
+  const isSuperAdmin = ['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((auth.currentUser?.email || '').trim().toLowerCase());
   
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [totalSales, setTotalSales] = useState(0);

@@ -863,7 +863,8 @@ export default function SuperAdmin() {
 
   const handleDeleteStore = async (storeId: string, storeName: string) => {
     // Only the main admin can delete
-    if (auth.currentUser?.email !== 'anges.gildas@gmail.com' && auth.currentUser?.email !== 'gildas@gmail.com') {
+    const currentEmail = (auth.currentUser?.email || '').trim().toLowerCase();
+    if (currentEmail !== 'anges.gildas@gmail.com' && currentEmail !== 'gildas@gmail.com') {
       showAlert("Accès non autorisé.", "error");
       return;
     }
@@ -1563,7 +1564,7 @@ export default function SuperAdmin() {
                             </div>
                           </div>
 
-                          {(auth.currentUser?.email === 'anges.gildas@gmail.com' || auth.currentUser?.email === 'gildas@gmail.com') && (
+                          {['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((auth.currentUser?.email || '').trim().toLowerCase()) && (
                             <div className="group relative">
                               <button 
                                 onClick={() => handleDeleteStore(store.id, store.name)}
