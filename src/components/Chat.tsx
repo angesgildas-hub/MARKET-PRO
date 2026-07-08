@@ -1116,7 +1116,7 @@ export default function Chat() {
                     <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md ${
                       activeTab === 'broadcast' ? 'bg-white/20 text-white' : 'bg-orange-50 text-orange-600 border border-orange-100'
                     }`}>
-                      Global
+                      MARKET PRO
                     </span>
                   </button>
                 </div>
@@ -1228,7 +1228,7 @@ export default function Chat() {
                     Annonces Système
                   </h3>
                   <p className="text-[9px] md:text-[10px] font-bold text-orange-500 truncate flex items-center gap-1 mt-0.5">
-                    <span className="w-1 h-1 rounded-full bg-orange-500"></span> Diffusion Globale
+                    <span className="w-1 h-1 rounded-full bg-orange-500"></span> Diffusion MARKET PRO
                   </p>
                 </div>
               </>

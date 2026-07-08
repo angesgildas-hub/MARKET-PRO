@@ -189,7 +189,7 @@ export default function Login() {
       if (!storeExists) {
         await setDoc(storeRef, {
           id: storeId,
-          name: isPrivileged ? 'Market Pro Global' : 'Ma Boutique',
+          name: isPrivileged ? 'MARKET PRO' : 'Ma Boutique',
           address: '',
           phone: '',
           licenseStatus: isPrivileged ? 'active' : 'pending', // Pending for new non-privileged stores
@@ -238,7 +238,7 @@ export default function Login() {
     // Add Connection History Log
     try {
       const logStoreId = storeId;
-      let finalStoreName = isPrivileged ? 'Market Pro Global' : 'Ma Boutique';
+      let finalStoreName = isPrivileged ? 'MARKET PRO' : 'Ma Boutique';
       try {
         const storeSettingsSnap = await getDoc(doc(db, 'storeSettings', logStoreId));
         if (storeSettingsSnap.exists()) {
@@ -276,14 +276,29 @@ export default function Login() {
         setLoading(false);
         return;
       }
-      if (!auth.currentUser) {
+      
+      // Handle closed popup silently
+      if (error.code === 'auth/popup-closed-by-user') {
         setLoading(false);
         return;
       }
-      if (error.message.includes('suspendu')) {
+
+      if (error.code === 'auth/unauthorized-domain') {
+        alert("Erreur de domaine non autorisé : Ce domaine d'hébergement (Hostinger) n'est pas autorisé dans les paramètres d'authentification de votre console Firebase. Veuillez ajouter ce domaine dans la liste des 'Domaines autorisés' sur votre console Firebase.");
+        setLoading(false);
+        return;
+      }
+
+      if (error.code === 'auth/popup-blocked') {
+        alert("Le popup de connexion a été bloqué par votre navigateur. Veuillez autoriser les fenêtres pop-up pour MARKET PRO.");
+        setLoading(false);
+        return;
+      }
+
+      if (error.message && error.message.includes('suspendu')) {
         alert(error.message);
       } else {
-        alert("Erreur lors de la connexion Google.");
+        alert(`Erreur de connexion Google : ${error.code || error.message || 'erreur inconnue'}`);
       }
     } finally {
       setLoading(false);
