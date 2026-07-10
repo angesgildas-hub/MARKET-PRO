@@ -295,12 +295,19 @@ export default function Register() {
       let message = "Une erreur est survenue lors de la création de votre compte.";
       
       const errStr = (err?.code || err?.message || "").toLowerCase();
-      if (errStr.includes("email-already-in-use")) {
+      if (errStr.includes("email-already-in-use") || err?.code === "auth/email-already-in-use") {
         message = "Cette adresse e-mail est déjà utilisée par une autre boutique sur Market Pro. Veuillez utiliser une autre adresse e-mail ou vous connecter.";
-      } else if (errStr.includes("invalid-email")) {
+      } else if (errStr.includes("invalid-email") || err?.code === "auth/invalid-email") {
         message = "L'adresse e-mail saisie n'est pas valide. Veuillez vérifier son format.";
-      } else if (errStr.includes("weak-password")) {
+      } else if (errStr.includes("weak-password") || err?.code === "auth/weak-password") {
         message = "Le mot de passe choisi est trop simple. Veuillez utiliser au moins 6 caractères.";
+      } else if (errStr.includes("network-request-failed") || err?.code === "auth/network-request-failed") {
+        message = "Échec de connexion réseau (auth/network-request-failed).\n\n" +
+                  "⚠️ Un bloqueur de publicités (AdBlock, uBlock, Brave Shield), un VPN, un pare-feu ou un DNS sécurisé bloque probablement la communication avec les serveurs d'authentification Google Firebase.\n\n" +
+                  "Résolution :\n" +
+                  "- Désactivez vos bloqueurs de publicité ou VPN pour ce site.\n" +
+                  "- Assurez-vous d'avoir une connexion Internet active.\n" +
+                  "- Essayez d'ouvrir l'application dans un autre navigateur ou une fenêtre de navigation privée.";
       } else if (err?.message) {
         message = err.message;
       }
@@ -416,7 +423,7 @@ export default function Register() {
                   <AlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={16} />
                   <div className="flex-1">
                     <p className="font-extrabold text-[10px] uppercase tracking-wider text-rose-900 mb-1">Attention</p>
-                    <p className="leading-relaxed text-rose-700">{error}</p>
+                    <p className="leading-relaxed text-rose-700 whitespace-pre-line">{error}</p>
                   </div>
                   <button
                     onClick={() => setError(null)}

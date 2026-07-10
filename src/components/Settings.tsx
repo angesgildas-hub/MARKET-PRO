@@ -26,7 +26,10 @@ import {
   Edit3,
   Search,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  ClipboardList,
+  Smartphone,
+  MessageSquare
 } from 'lucide-react';
 import { collection, onSnapshot, query, orderBy, limit, addDoc, serverTimestamp, doc, setDoc, getDoc, updateDoc, deleteDoc, getDocs, where } from 'firebase/firestore';
 import { updateProfile, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
@@ -38,6 +41,7 @@ import { logAction, AuditAction } from '../services/audit';
 import { AppContext, Theme } from '../App';
 import { translations, Language } from '../lib/translations';
 import { handleFirestoreError, OperationType } from '../services/db';
+import defaultLogo from '../assets/images/market_pro_logo_1781718180029.jpg';
 
 export default function Settings() {
   const { language, setLanguage, theme, setTheme, userRole, setUserRole, userProfile, verifyAction } = useContext(AppContext);
@@ -73,6 +77,7 @@ export default function Settings() {
   });
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
+  const [selectedUserPhoto, setSelectedUserPhoto] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [usersSubTab, setUsersSubTab] = useState<'list' | 'matrix'>('list');
   const [matrixDrafts, setMatrixDrafts] = useState<Record<string, UserPermissions>>({});
@@ -163,46 +168,61 @@ export default function Settings() {
   }, [userProfile]);
 
   useEffect(() => {
-    const unsubStore = onSnapshot(doc(db, 'storeSettings', userProfile?.storeId || 'main'), (snap) => {
-      if (snap.exists()) setStoreSettings(snap.data() as StoreSettings);
+    if (!userProfile?.storeId) return;
+    const unsubStore = onSnapshot(doc(db, 'storeSettings', userProfile.storeId), (snap) => {
+      if (snap.exists()) {
+        setStoreSettings(snap.data() as StoreSettings);
+      } else {
+        setStoreSettings({
+          id: userProfile.storeId,
+          name: userProfile.storeName || 'SuperMarket Pro',
+          address: 'Dakar, Sénégal',
+          phone: '+221 33 000 00 00',
+          updatedAt: new Date().toISOString()
+        });
+      }
     }, (error) => {
       console.error("Error fetching store settings:", error);
     });
+    return () => unsubStore();
+  }, [userProfile?.storeId]);
+
+  const annexesString = JSON.stringify(((storeSettings as any)?.annexes || []).map((a: any) => a.id));
+
+  useEffect(() => {
+    if (userRole !== 'admin' || !userProfile?.storeId) return;
 
     let unsubUsers = () => {};
     let unsubLogs = () => {};
 
-    if (userRole === 'admin' && userProfile?.storeId) {
-      const parentId = userProfile.parentStoreId || userProfile.storeId;
-      const annexes = (storeSettings as any)?.annexes || [];
-      const authorizedStoreIds = [parentId, ...annexes.map((a: any) => a.id)].filter(Boolean);
-      const queryStores = authorizedStoreIds.length > 0 ? authorizedStoreIds : [userProfile.storeId];
+    const parentId = userProfile.parentStoreId || userProfile.storeId;
+    const annexesIds = JSON.parse(annexesString) as string[];
+    const authorizedStoreIds = [parentId, ...annexesIds].filter(Boolean);
+    const queryStores = authorizedStoreIds.length > 0 ? authorizedStoreIds : [userProfile.storeId];
 
-      unsubUsers = onSnapshot(query(collection(db, 'users'), where('storeId', 'in', queryStores)), (snap) => {
-        const fetchedUsers = snap.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile));
-        fetchedUsers.sort((a, b) => {
-          const timeA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : (a.createdAt ? new Date(a.createdAt as any).getTime() : 0);
-          const timeB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : (b.createdAt ? new Date(b.createdAt as any).getTime() : 0);
-          return timeB - timeA;
-        });
-        setUsers(fetchedUsers);
-      }, (error) => {
-        console.warn("Permission denied for users list - expected for non-admins.", error);
+    unsubUsers = onSnapshot(query(collection(db, 'users'), where('storeId', 'in', queryStores)), (snap) => {
+      const fetchedUsers = snap.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile));
+      fetchedUsers.sort((a, b) => {
+        const timeA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : (a.createdAt ? new Date(a.createdAt as any).getTime() : 0);
+        const timeB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : (b.createdAt ? new Date(b.createdAt as any).getTime() : 0);
+        return timeB - timeA;
       });
+      setUsers(fetchedUsers);
+    }, (error) => {
+      console.warn("Permission denied for users list - expected for non-admins.", error);
+    });
 
-      unsubLogs = onSnapshot(query(collection(db, 'auditLogs'), where('storeId', '==', userProfile.storeId), orderBy('timestamp', 'desc'), limit(50)), (snap) => {
-        setLogs(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as AuditLog)));
-      }, (error) => {
-        console.warn("Permission denied for audit logs - expected for non-admins.");
-      });
-    }
+    unsubLogs = onSnapshot(query(collection(db, 'auditLogs'), where('storeId', '==', userProfile.storeId), orderBy('timestamp', 'desc'), limit(50)), (snap) => {
+      setLogs(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as AuditLog)));
+    }, (error) => {
+      console.warn("Permission denied for audit logs - expected for non-admins.");
+    });
 
     return () => {
-      unsubStore();
       unsubUsers();
       unsubLogs();
     };
-  }, [userRole, userProfile?.storeId, storeSettings]);
+  }, [userRole, userProfile?.storeId, annexesString]);
 
   const handleSetSettingsPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -280,7 +300,10 @@ export default function Settings() {
     reports: { read: true, create: false, update: false, delete: false },
     personnel: { read: false, create: false, update: false, delete: false },
     clients: { read: true, create: true, update: true, delete: true },
-    sales: { read: true, create: false, update: false, delete: false }
+    sales: { read: true, create: false, update: false, delete: false },
+    commandes: { read: true, create: true, update: true, delete: true },
+    mobile_money: { read: true, create: true, update: true, delete: true },
+    chat: { read: true, create: true, update: true, delete: true }
   });
 
   const fullAdminPermissions = (): UserPermissions => ({
@@ -291,7 +314,10 @@ export default function Settings() {
     reports: { read: true, create: true, update: true, delete: true },
     personnel: { read: true, create: true, update: true, delete: true },
     clients: { read: true, create: true, update: true, delete: true },
-    sales: { read: true, create: true, update: true, delete: true }
+    sales: { read: true, create: true, update: true, delete: true },
+    commandes: { read: true, create: true, update: true, delete: true },
+    mobile_money: { read: true, create: true, update: true, delete: true },
+    chat: { read: true, create: true, update: true, delete: true }
   });
 
   const getUserDefaultPermissions = (email: string): UserPermissions => {
@@ -536,7 +562,10 @@ export default function Settings() {
         reports: { read: false, create: false, update: false, delete: false },
         personnel: { read: false, create: false, update: false, delete: false },
         clients: { read: true, create: true, update: true, delete: false },
-        sales: { read: true, create: false, update: false, delete: false }
+        sales: { read: true, create: false, update: false, delete: false },
+        commandes: { read: true, create: true, update: true, delete: false },
+        mobile_money: { read: true, create: true, update: true, delete: false },
+        chat: { read: true, create: true, update: true, delete: true }
       };
     } else if (role === 'manager') {
       newPermissions = {
@@ -547,7 +576,10 @@ export default function Settings() {
         reports: { read: true, create: true, update: true, delete: false },
         personnel: { read: true, create: true, update: true, delete: false },
         clients: { read: true, create: true, update: true, delete: true },
-        sales: { read: true, create: true, update: true, delete: true }
+        sales: { read: true, create: true, update: true, delete: true },
+        commandes: { read: true, create: true, update: true, delete: true },
+        mobile_money: { read: true, create: true, update: true, delete: true },
+        chat: { read: true, create: true, update: true, delete: true }
       };
     } else if (role === 'admin') {
       newPermissions = {
@@ -558,7 +590,10 @@ export default function Settings() {
         reports: { read: true, create: true, update: true, delete: true },
         personnel: { read: true, create: true, update: true, delete: true },
         clients: { read: true, create: true, update: true, delete: true },
-        sales: { read: true, create: true, update: true, delete: true }
+        sales: { read: true, create: true, update: true, delete: true },
+        commandes: { read: true, create: true, update: true, delete: true },
+        mobile_money: { read: true, create: true, update: true, delete: true },
+        chat: { read: true, create: true, update: true, delete: true }
       };
     }
     
@@ -648,13 +683,17 @@ export default function Settings() {
       const uid = userCredential.user.uid;
       
       // Update Auth Profile
-      await updateProfile(userCredential.user, { displayName: name });
+      await updateProfile(userCredential.user, { 
+        displayName: name,
+        photoURL: selectedUserPhoto || '' 
+      });
 
       // Add to 'users' collection in main Firestore
       await setDoc(doc(db, 'users', uid), {
         uid,
         email,
         displayName: name,
+        photoURL: selectedUserPhoto || '',
         role,
         storeId: targetStoreId || userProfile?.storeId,
         parentStoreId: userProfile?.parentStoreId || userProfile?.storeId,
@@ -730,10 +769,16 @@ export default function Settings() {
     if (!userProfile?.storeId) return;
     try {
       setIsActionLoading(true);
-      await setDoc(doc(db, 'storeSettings', userProfile.storeId), {
+      
+      // Force the store settings ID to match the user's store ID exactly.
+      // This prevents any security rule violation if storeSettings has 'id: main' locally.
+      const settingsToSave = {
         ...storeSettings,
+        id: userProfile.storeId,
         updatedAt: new Date().toISOString()
-      }, { merge: true });
+      };
+
+      await setDoc(doc(db, 'storeSettings', userProfile.storeId), settingsToSave, { merge: true });
       
       await logAction(
         userProfile.storeId,
@@ -1145,7 +1190,12 @@ export default function Settings() {
                           </button>
                         </div>
                       ) : (
-                        <ShoppingBag size={56} />
+                        <div className="relative w-full h-full flex items-center justify-center">
+                          <img src={defaultLogo} alt="Logo par défaut" className="w-full h-full object-cover opacity-40" />
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <ShoppingBag size={56} className="text-gray-400" />
+                          </div>
+                        </div>
                       )}
                       
                       {isUploading && (
@@ -1249,11 +1299,7 @@ export default function Settings() {
               <div className="space-y-10">
                 <div className="flex flex-col items-center text-center space-y-6">
                   <div className="bg-orange-500 w-24 h-24 rounded-[36px] shadow-2xl shadow-orange-500/20 transform rotate-3 hover:rotate-0 transition-transform overflow-hidden flex items-center justify-center">
-                    {storeSettings?.logoUrl ? (
-                      <img src={storeSettings.logoUrl} alt="Logo" className="w-full h-full object-cover" />
-                    ) : (
-                      <ShoppingBag size={48} className="text-white" />
-                    )}
+                    <img src={storeSettings?.logoUrl || defaultLogo} alt="Logo" className="w-full h-full object-cover" />
                   </div>
                   <div>
                     <h2 className="text-4xl font-black text-gray-900 tracking-tighter italic">MARKET PRO</h2>
@@ -1671,13 +1717,16 @@ export default function Settings() {
 
             {activeTab === 'users' && (() => {
               const matrixModules = [
+                { key: 'reports', label: 'Tableau de Bord', desc: 'Statistiques et performances financières', icon: ShieldCheck },
                 { key: 'pos', label: 'Caisse / Vente', desc: 'Gestion du point de vente et encaissements', icon: ShoppingBag },
-                { key: 'inventory', label: 'Inventaire', desc: 'Gestion des articles, stocks et catégories', icon: Database },
-                { key: 'accounting', label: 'Dépenses', desc: 'Saisie et suivi des frais d\'exploitation', icon: Shield },
-                { key: 'sales', label: 'Historique', desc: 'Consulter l\'historique des ventes', icon: History },
-                { key: 'clients', label: 'Clients', desc: 'Fichier client et fidélité', icon: User },
+                { key: 'commandes', label: 'Commandes', desc: 'Suivi et gestion des commandes clients', icon: ClipboardList },
+                { key: 'mobile_money', label: 'Transactions Mobiles', desc: 'Gestion des flux d\'argent mobile', icon: Smartphone },
+                { key: 'inventory', label: 'Inventaire / Stocks', desc: 'Gestion des articles, stocks et catégories', icon: Database },
+                { key: 'sales', label: 'Historique des Ventes', desc: 'Consulter l\'historique des ventes', icon: History },
+                { key: 'accounting', label: 'Comptabilité / Dépenses', desc: 'Saisie et suivi des frais d\'exploitation', icon: Shield },
+                { key: 'clients', label: 'Fichier Clients', desc: 'Fichier client et fidélité', icon: User },
                 { key: 'personnel', label: 'Équipe & RH', desc: 'Contrats, congés et fiches de paie', icon: UserPlus },
-                { key: 'reports', label: 'Rapports', desc: 'Statistiques et performances financières', icon: ShieldCheck },
+                { key: 'chat', label: 'Messagerie Interne', desc: 'Tchat d\'équipe et communications', icon: MessageSquare },
                 { key: 'settings', label: 'Configuration', desc: 'Paramètres système et sauvegardes', icon: Lock },
               ] as const;
 
@@ -1765,13 +1814,13 @@ export default function Settings() {
                                  className="flex flex-wrap gap-1.5 justify-center lg:justify-end flex-1 cursor-pointer hover:bg-gray-50 p-2 rounded-2xl transition-colors group/matrix"
                                  title="Cliquer pour modifier les permissions"
                                 >
-                                  {(['pos', 'inventory', 'accounting', 'sales', 'clients', 'reports', 'personnel', 'settings'] as (keyof UserPermissions)[]).map(m => {
-                                    const permissions = u.permissions?.[m] || getUserDefaultPermissions(u.email || '')[m];
+                                  {(['reports', 'pos', 'commandes', 'mobile_money', 'inventory', 'sales', 'accounting', 'clients', 'personnel', 'chat', 'settings'] as (keyof UserPermissions)[]).map(m => {
+                                    const permissions = (u.permissions?.[m] || getUserDefaultPermissions(u.email || '')[m]) || { read: false, create: false, update: false, delete: false };
                                     const hasAccess = permissions.read || permissions.create || permissions.update || permissions.delete;
                                     return (
                                       <div key={m} className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition-all ${hasAccess ? 'bg-white border-orange-100 shadow-sm' : 'bg-gray-50/50 border-transparent opacity-25'}`}>
                                         <span className="text-[7px] font-black uppercase tracking-tighter text-gray-400">
-                                          {m === 'pos' ? 'Vente' : m === 'inventory' ? 'Stock' : m === 'accounting' ? 'Compta' : m === 'sales' ? 'Histo' : m === 'clients' ? 'Clients' : m === 'reports' ? 'Rapports' : m === 'personnel' ? 'Equipe' : 'Config'}
+                                          {m === 'reports' ? 'TDB' : m === 'pos' ? 'Vente' : m === 'commandes' ? 'Cmds' : m === 'mobile_money' ? 'M-Money' : m === 'inventory' ? 'Stock' : m === 'sales' ? 'Histo' : m === 'accounting' ? 'Compta' : m === 'clients' ? 'Clients' : m === 'personnel' ? 'Equipe' : m === 'chat' ? 'Tchat' : 'Config'}
                                         </span>
                                         <div className="flex gap-1 items-center">
                                           <div className={`w-5 h-5 rounded-full flex items-center justify-center ${permissions.read ? 'bg-green-500 text-white shadow-lg shadow-green-500/20' : 'bg-gray-100 text-gray-300'}`} title="Lecture">
@@ -1868,7 +1917,7 @@ export default function Settings() {
 
                                     <div className="flex-1 overflow-y-auto p-6 sm:p-8 max-h-[65vh] scrollbar-thin scrollbar-thumb-gray-200">
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                         {(['pos', 'inventory', 'accounting', 'settings', 'reports', 'personnel', 'clients', 'sales'] as (keyof UserPermissions)[]).map(module => (
+                                         {(['reports', 'pos', 'commandes', 'mobile_money', 'inventory', 'sales', 'accounting', 'clients', 'personnel', 'chat', 'settings'] as (keyof UserPermissions)[]).map(module => (
                                            <div key={module} className="bg-gray-50 p-6 rounded-[28px] border border-gray-100 hover:border-orange-500/20 transition-colors">
                                               <div className="flex items-center justify-between mb-4">
                                                  <div className="flex items-center gap-2.5">
@@ -1876,13 +1925,16 @@ export default function Settings() {
                                                        <Shield size={16} />
                                                     </div>
                                                     <span className="text-[11px] font-black uppercase tracking-widest text-gray-900">
-                                                      {module === 'pos' ? 'Caisse / Vente' :
-                                                       module === 'inventory' ? 'Inventaire' :
-                                                       module === 'accounting' ? 'Dépenses' :
-                                                       module === 'sales' ? 'Historique' :
-                                                       module === 'clients' ? 'Clients' :
-                                                       module === 'personnel' ? 'Équipe' :
-                                                       module === 'reports' ? 'Rapports' :
+                                                      {module === 'reports' ? 'Tableau de Bord' :
+                                                       module === 'pos' ? 'Caisse / Vente' :
+                                                       module === 'commandes' ? 'Commandes' :
+                                                       module === 'mobile_money' ? 'Transactions Mobiles' :
+                                                       module === 'inventory' ? 'Inventaire / Stocks' :
+                                                       module === 'sales' ? 'Historique des Ventes' :
+                                                       module === 'accounting' ? 'Comptabilité / Dépenses' :
+                                                       module === 'clients' ? 'Fichier Clients' :
+                                                       module === 'personnel' ? 'Équipe & RH' :
+                                                       module === 'chat' ? 'Messagerie Interne' :
                                                        module === 'settings' ? 'Configuration' : module}
                                                     </span>
                                                  </div>
@@ -2131,97 +2183,170 @@ export default function Settings() {
                   )}
 
 
-                 <AnimatePresence>
-                   {isAddUserOpen && (
-                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                       <motion.div 
-                         initial={{ opacity: 0 }} 
-                         animate={{ opacity: 1 }} 
-                         exit={{ opacity: 0 }}
-                         className="absolute inset-0 bg-black/60 backdrop-blur-sm" 
-                         onClick={() => setIsAddUserOpen(false)} 
-                       />
-                       <motion.div 
-                         initial={{ opacity: 0, y: 100, scale: 0.95 }}
-                         animate={{ opacity: 1, y: 0, scale: 1 }}
-                         exit={{ opacity: 0, y: 100, scale: 0.95 }}
-                         className="relative bg-white w-full max-w-md rounded-[28px] shadow-2xl overflow-hidden flex flex-col"
-                       >
-                         <div className="p-6 sm:p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                           <div>
-                             <h2 className="text-2xl font-black text-gray-900 tracking-tight italic uppercase decoration-orange-500 decoration-4 underline-offset-4 font-sans tracking-tighter">Nouveau</h2>
-                             <p className="text-gray-500 font-bold italic text-[11px] mt-1.5 uppercase tracking-tighter">Créer un membre de l'équipe.</p>
-                           </div>
-                           <button onClick={() => setIsAddUserOpen(false)} className="p-2 hover:bg-white hover:shadow-lg rounded-full transition-all group">
-                             <X size={20} className="text-gray-300 group-hover:text-gray-900" />
-                           </button>
-                         </div>
+                  <AnimatePresence>
+                    {isAddUserOpen && (
+                      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <motion.div 
+                          initial={{ opacity: 0 }} 
+                          animate={{ opacity: 1 }} 
+                          exit={{ opacity: 0 }}
+                          className="absolute inset-0 bg-black/60 backdrop-blur-sm" 
+                          onClick={() => { setIsAddUserOpen(false); setSelectedUserPhoto(null); }} 
+                        />
+                        <motion.div 
+                          initial={{ opacity: 0, y: 100, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 100, scale: 0.95 }}
+                          className="relative bg-white w-full max-w-3xl rounded-[32px] shadow-2xl overflow-hidden flex flex-col"
+                        >
+                          <div className="py-4 px-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                            <div>
+                              <h2 className="text-xl font-black text-gray-900 tracking-tight italic uppercase decoration-orange-500 decoration-4 underline-offset-4 font-sans tracking-tighter">Nouveau Membre</h2>
+                              <p className="text-gray-500 font-bold italic text-[10px] mt-0.5 uppercase tracking-tighter">Créer un membre de l'équipe et lui affecter des accès.</p>
+                            </div>
+                            <button onClick={() => { setIsAddUserOpen(false); setSelectedUserPhoto(null); }} className="p-2 hover:bg-white hover:shadow-lg rounded-full transition-all group">
+                              <X size={18} className="text-gray-300 group-hover:text-gray-900" />
+                            </button>
+                          </div>
 
-                         <form onSubmit={handleAddUser} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
-                           <div className="space-y-4">
+                          <form onSubmit={handleAddUser} className="flex-1 overflow-y-auto p-5 space-y-4">
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
+                              {/* Left Column: Avatar & Photo Section */}
+                              <div className="bg-gray-50/50 p-4 rounded-[20px] border border-gray-100/50 flex flex-col items-center text-center justify-between space-y-3">
+                                <div className="relative group">
+                                  <div className="w-16 h-16 rounded-[20px] bg-white border-2 border-gray-200/50 shadow-sm flex items-center justify-center overflow-hidden">
+                                    {selectedUserPhoto ? (
+                                      <img src={selectedUserPhoto} alt="User profile" className="w-full h-full object-cover" />
+                                    ) : (
+                                      <User size={24} className="text-gray-300" />
+                                    )}
+                                  </div>
+                                  <label className="absolute -bottom-1 -right-1 w-6 h-6 bg-orange-600 text-white rounded-lg flex items-center justify-center shadow-md cursor-pointer hover:bg-orange-700 transition-all hover:scale-110 active:scale-95">
+                                    <Plus size={12} />
+                                    <input 
+                                      type="file" 
+                                      accept="image/*" 
+                                      className="hidden" 
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                          const reader = new FileReader();
+                                          reader.onloadend = () => setSelectedUserPhoto(reader.result as string);
+                                          reader.readAsDataURL(file);
+                                        }
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+                                
+                                <div className="space-y-1.5 w-full">
+                                  <p className="text-[9px] font-black uppercase tracking-wider text-gray-800">Photo de profil</p>
+                                  
+                                  <div className="flex flex-wrap gap-1 justify-center">
+                                    {[
+                                      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+                                      'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+                                      'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150',
+                                      'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
+                                      'https://images.unsplash.com/photo-1628157582853-a796fa650a6a?w=150'
+                                    ].map((url, idx) => (
+                                      <button
+                                        key={idx}
+                                        type="button"
+                                        onClick={() => setSelectedUserPhoto(url)}
+                                        className={`w-7 h-7 rounded-lg overflow-hidden border transition-all hover:scale-110 ${selectedUserPhoto === url ? 'border-orange-500 scale-105 shadow-md shadow-orange-500/20' : 'border-transparent'}`}
+                                      >
+                                        <img src={url} alt={`Avatar ${idx}`} className="w-full h-full object-cover" />
+                                      </button>
+                                    ))}
+                                  </div>
+
+                                  {selectedUserPhoto && (
+                                    <button 
+                                      type="button" 
+                                      onClick={() => setSelectedUserPhoto(null)}
+                                      className="text-[8px] font-black uppercase tracking-wider text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-100 px-2 py-1 rounded-lg transition-colors w-full"
+                                    >
+                                      Réinitialiser
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                                <div className="space-y-1 sm:col-span-2">
+                                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Nom Complet</label>
+                                  <input 
+                                    name="name" 
+                                    required
+                                    className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl font-bold text-gray-900 focus:bg-white focus:ring-4 focus:ring-orange-500/5 transition-all outline-none text-xs font-sans" 
+                                    placeholder="Ex: Jean Dupont"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Adresse Email</label>
+                                  <input 
+                                    name="email" 
+                                    type="email"
+                                    required
+                                    className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl font-bold text-gray-900 focus:bg-white focus:ring-4 focus:ring-orange-500/5 transition-all outline-none text-xs font-sans" 
+                                    placeholder="exemple@market.com"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Mot de Passe d'Accès</label>
+                                  <input 
+                                    name="password" 
+                                    type="password"
+                                    required
+                                    minLength={6}
+                                    className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl font-bold text-gray-900 focus:bg-white focus:ring-4 focus:ring-orange-500/5 transition-all outline-none text-xs font-sans" 
+                                    placeholder="••••••••"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Rôle Initial</label>
+                                  <div className="relative">
+                                    <select 
+                                      name="role"
+                                      className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl font-bold text-gray-900 focus:bg-white focus:ring-2 focus:ring-orange-500/10 transition-all outline-none appearance-none pr-10 font-sans text-xs font-bold"
+                                    >
+                                      <option value="cashier" className="text-gray-900 bg-white font-sans font-bold text-xs">Caissier</option>
+                                      <option value="manager" className="text-gray-900 bg-white font-sans font-bold text-xs">Gérant / Chef</option>
+                                      <option value="admin" className="text-gray-900 bg-white font-sans font-bold text-xs">Administrateur</option>
+                                    </select>
+                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
+                                      <ChevronDown size={14} />
+                                    </div>
+                                  </div>
+                                </div>
                              <div className="space-y-1.5">
-                               <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Nom Complet</label>
-                               <input 
-                                 name="name" 
-                                 required
-                                 className="w-full px-5 py-3 bg-gray-50 border-none rounded-xl font-bold text-gray-900 focus:bg-white focus:ring-4 focus:ring-orange-500/5 transition-all outline-none text-sm" 
-                                 placeholder=""
-                               />
-                             </div>
-                              <div className="space-y-1.5">
-                                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Adresse Email</label>
-                                <input 
-                                  name="email" 
-                                  type="email"
-                                  required
-                                  className="w-full px-5 py-3 bg-gray-50 border-none rounded-xl font-bold text-gray-900 focus:bg-white focus:ring-4 focus:ring-orange-500/5 transition-all outline-none text-sm" 
-                                  placeholder="exemple@market.com"
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Mot de Passe d'Accès</label>
-                                <input 
-                                  name="password" 
-                                  type="password"
-                                  required
-                                  minLength={6}
-                                  className="w-full px-5 py-3 bg-gray-50 border-none rounded-xl font-bold text-gray-900 focus:bg-white focus:ring-4 focus:ring-orange-500/5 transition-all outline-none text-sm" 
-                                  placeholder="••••••••"
-                                />
-                              </div>
-                             <div className="space-y-3">
-                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Rôle Initial</label>
-                               <select 
-                                 name="role"
-                                 className="w-full px-8 py-5 bg-gray-50 border-none rounded-[28px] font-bold text-gray-900 focus:bg-white focus:ring-8 focus:ring-orange-500/5 transition-all outline-none appearance-none"
-                               >
-                                 <option value="cashier">Caissier</option>
-                                 <option value="manager">Gérant / Chef</option>
-                                 <option value="admin">Administrateur</option>
-                               </select>
-                             </div>
-                             <div className="space-y-3">
-                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Boutique d'affectation</label>
-                               <select 
-                                 name="targetStoreId"
-                                 className="w-full px-8 py-5 bg-gray-50 border-none rounded-[28px] font-bold text-gray-900 focus:bg-white focus:ring-8 focus:ring-orange-500/5 transition-all outline-none appearance-none font-sans"
-                               >
-                                 <option value={userProfile?.parentStoreId || userProfile?.storeId || "main"}>
-                                   {storeSettings?.name || "Boutique Principale"} (Principal)
-                                 </option>
-                                 {((storeSettings as any)?.annexes || []).map((annexe: any) => (
-                                   <option key={annexe.id} value={annexe.id}>
-                                     {annexe.name} ({annexe.zone || "Succursale"})
+                               <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Boutique d'affectation</label>
+                               <div className="relative">
+                                 <select 
+                                   name="targetStoreId"
+                                   className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl font-bold text-gray-900 focus:bg-white focus:ring-2 focus:ring-orange-500/10 transition-all outline-none appearance-none pr-10 font-sans"
+                                 >
+                                   <option value={userProfile?.parentStoreId || userProfile?.storeId || "main"} className="text-gray-900 bg-white font-sans font-bold">
+                                     {storeSettings?.name || "Boutique Principale"} (Principal)
                                    </option>
-                                 ))}
-                               </select>
+                                   {((storeSettings as any)?.annexes || []).map((annexe: any) => (
+                                     <option key={annexe.id} value={annexe.id} className="text-gray-900 bg-white font-sans font-bold">
+                                       {annexe.name} ({annexe.zone || "Succursale"})
+                                     </option>
+                                   ))}
+                                 </select>
+                                 <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
+                                   <ChevronDown size={18} />
+                                 </div>
+                               </div>
                              </div>
                            </div>
 
-                           <div className="flex flex-col sm:flex-row gap-3 pt-6">
+                           <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t border-gray-100">
                               <button 
                                 type="button" 
-                                onClick={() => setIsAddUserOpen(false)}
+                                onClick={() => { setIsAddUserOpen(false); setSelectedUserPhoto(null); }}
                                 className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-gray-200 transition-all active:scale-95"
                               >
                                 Annuler

@@ -34,6 +34,32 @@
     background: #94a3b8;
   }
 
+  /* Custom Scrollbar for horizontal scrolling elements */
+  .overflow-x-auto {
+    scrollbar-width: auto;
+    scrollbar-color: #94a3b8 rgba(0, 0, 0, 0.03);
+  }
+
+  .overflow-x-auto::-webkit-scrollbar {
+    height: 10px !important;
+  }
+
+  .overflow-x-auto::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.03) !important;
+    border-radius: 6px !important;
+  }
+
+  .overflow-x-auto::-webkit-scrollbar-thumb {
+    background: #94a3b8 !important;
+    border-radius: 6px !important;
+    border: 2px solid transparent !important;
+    background-clip: padding-box !important;
+  }
+
+  .overflow-x-auto::-webkit-scrollbar-thumb:hover {
+    background: #f97316 !important;
+  }
+
   /* Perfect Icon-Text Alignment helper */
   svg {
     display: inline-block;

@@ -168,6 +168,9 @@ export interface UserPermissions {
   personnel: ModulePermissions;
   clients: ModulePermissions;
   sales: ModulePermissions;
+  commandes: ModulePermissions;
+  mobile_money: ModulePermissions;
+  chat: ModulePermissions;
 }
 
 export interface UserProfile {

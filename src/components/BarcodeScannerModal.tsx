@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { Camera, X, RefreshCw, Volume2, Info, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Camera, X, RefreshCw, Volume2, Info, CheckCircle, AlertTriangle, Zap } from 'lucide-react';
 import { Product } from '../types';
 
 interface BarcodeScannerModalProps {
@@ -22,6 +22,10 @@ export default function BarcodeScannerModal({
   const [isContinuous, setIsContinuous] = useState<boolean>(true);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [scannedLogs, setScannedLogs] = useState<{ code: string; match?: Product; timestamp: string; status: 'success' | 'not_found' }[]>([]);
+  
+  // Flash torch state
+  const [torchSupported, setTorchSupported] = useState<boolean>(false);
+  const [torchEnabled, setTorchEnabled] = useState<boolean>(false);
   
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isScanningRef = useRef<boolean>(false);
@@ -150,7 +154,7 @@ export default function BarcodeScannerModal({
         activeScanner.start(
           selectedCameraId,
           {
-            fps: 12,
+            fps: 26, // HIGH-PERFORMANCE RATE (26 frames per second for ultra-responsive scanning)
             // Custom QR/Barcode overlay box
             qrbox: (width, height) => {
               // Wide landscape rectangle specifically for barcode formats
@@ -164,9 +168,27 @@ export default function BarcodeScannerModal({
           () => {
             // Unhandled frame decode failures are ignored silently
           }
-        ).catch((err) => {
+        ).then(() => {
+          // Probe capabilities to see if flashlight/torch is supported
+          setTimeout(() => {
+            try {
+              if (activeScanner) {
+                const track = (activeScanner as any).getRunningTrack();
+                const capabilities = track?.getCapabilities() as any;
+                if (capabilities && capabilities.torch) {
+                  setTorchSupported(true);
+                } else {
+                  setTorchSupported(false);
+                }
+              }
+            } catch (e) {
+              console.log("[Scanner] Torch not supported or check failed:", e);
+              setTorchSupported(false);
+            }
+          }, 800);
+        }).catch((err) => {
           console.error('[Scanner Start Error]:', err);
-          setError("Impossible de démarrer le scanneur : " + (err.message || err));
+          setError("Impossible de demarrer le scanneur : " + (err.message || err));
           isScanningRef.current = false;
         });
       };
@@ -191,6 +213,30 @@ export default function BarcodeScannerModal({
       }
     };
   }, [isOpen, selectedCameraId, isContinuous, products]);
+
+  // Reset flashlight on close
+  useEffect(() => {
+    if (!isOpen) {
+      setTorchEnabled(false);
+      setTorchSupported(false);
+    }
+  }, [isOpen]);
+
+  const toggleTorch = async () => {
+    if (!scannerRef.current) return;
+    try {
+      const nextState = !torchEnabled;
+      const track = (scannerRef.current as any).getRunningTrack();
+      if (track) {
+        await track.applyConstraints({
+          advanced: [{ torch: nextState }]
+        } as any);
+        setTorchEnabled(nextState);
+      }
+    } catch (err) {
+      console.error("Failed to toggle torch:", err);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -290,6 +336,20 @@ export default function BarcodeScannerModal({
               />
               <span className="text-[11px] font-bold text-gray-600">Scan continu</span>
             </label>
+
+            {torchSupported && (
+              <button 
+                onClick={toggleTorch}
+                className={`p-1.5 rounded-lg border transition-colors ${
+                  torchEnabled 
+                    ? 'bg-amber-100 border-amber-300 text-amber-600 hover:bg-amber-200' 
+                    : 'bg-white border-gray-200 text-gray-400 hover:bg-gray-50'
+                }`}
+                title="Activer la torche/flash"
+              >
+                <Zap size={14} className={torchEnabled ? 'fill-amber-500' : ''} />
+              </button>
+            )}
 
             <button 
               onClick={() => setSoundEnabled(!soundEnabled)}

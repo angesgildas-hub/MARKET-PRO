@@ -90,7 +90,7 @@ service cloud.firestore {
         hasUserDoc() && 
         getLicenseStoreId() != "" &&
         exists(/databases/$(database)/documents/storeSettings/$(getLicenseStoreId())) &&
-        get(/databases/$(database)/documents/storeSettings/$(getLicenseStoreId())).data.get('licenseStatus', 'inactive') == 'active'
+        get(/databases/$(database)/documents/storeSettings/$(getLicenseStoreId())).data.get('licenseStatus', 'inactive') in ['active', 'pending']
       );
     }
 
@@ -180,8 +180,8 @@ service cloud.firestore {
     }
 
     match /products/{productId} {
-      allow read: if canRead('inventory') && belongsToStore(existing());
-      allow list: if canRead('inventory') && belongsToStore(resource.data);
+      allow read: if (canRead('inventory') || canRead('pos') || canRead('sales')) && belongsToStore(existing());
+      allow list: if (canRead('inventory') || canRead('pos') || canRead('sales')) && belongsToStore(resource.data);
       allow create: if canCreate('inventory') && isValidProduct(incoming()) && belongsToStore(incoming()) && isValidId(productId);
       allow update: if canUpdate('inventory') && belongsToStore(existing()) && (
         // Stock adjustment only (ERP internal logic)
@@ -193,8 +193,8 @@ service cloud.firestore {
     }
 
     match /categories/{categoryId} {
-      allow read: if canRead('inventory') && belongsToStore(existing());
-      allow list: if canRead('inventory') && belongsToStore(resource.data);
+      allow read: if (canRead('inventory') || canRead('pos') || canRead('sales')) && belongsToStore(existing());
+      allow list: if (canRead('inventory') || canRead('pos') || canRead('sales')) && belongsToStore(resource.data);
       allow write: if canCreate('inventory') && belongsToStore(incoming()) && incoming().name is string && incoming().name.size() <= 100 && isValidId(categoryId);
     }
 
@@ -483,11 +483,19 @@ service cloud.firestore {
     }
 
     match /commandes/{commandeId} {
-      allow read: if (canRead('pos') || canRead('sales')) && (isBootstrapAdmin() || (isSignedIn() && existing().storeId == userStoreId()));
-      allow list: if (canRead('pos') || canRead('sales')) && (isBootstrapAdmin() || (isSignedIn() && resource.data.storeId == userStoreId()));
-      allow create: if canCreate('pos') && isValidCommande(incoming()) && (isBootstrapAdmin() || (isSignedIn() && incoming().storeId == userStoreId())) && isValidId(commandeId);
-      allow update: if canUpdate('pos') && (isBootstrapAdmin() || (isSignedIn() && existing().storeId == userStoreId() && incoming().storeId == existing().storeId));
-      allow delete: if canDelete('pos') && (isBootstrapAdmin() || (isSignedIn() && existing().storeId == userStoreId()));
+      allow read: if (canRead('pos') || canRead('sales')) && belongsToStore(existing());
+      allow list: if (canRead('pos') || canRead('sales')) && belongsToStore(resource.data);
+      allow create: if canCreate('pos') && isValidCommande(incoming()) && belongsToStore(incoming()) && isValidId(commandeId);
+      allow update: if canUpdate('pos') && belongsToStore(existing()) && belongsToStore(incoming()) && incoming().get('storeId', '') == existing().get('storeId', '');
+      allow delete: if canDelete('pos') && belongsToStore(existing());
+    }
+
+    match /inventories/{inventoryId} {
+      allow read: if (canRead('inventory') || canRead('pos')) && belongsToStore(existing());
+      allow list: if (canRead('inventory') || canRead('pos')) && belongsToStore(resource.data);
+      allow create: if (canCreate('inventory') || canCreate('pos')) && belongsToStore(incoming()) && isValidId(inventoryId);
+      allow update: if (canUpdate('inventory') || canUpdate('pos')) && belongsToStore(existing()) && belongsToStore(incoming()) && incoming().get('storeId', '') == existing().get('storeId', '');
+      allow delete: if (canDelete('inventory') || canDelete('pos')) && belongsToStore(existing());
     }
   }
 }

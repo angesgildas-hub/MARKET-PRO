@@ -981,7 +981,7 @@ export default function SuperAdmin() {
   const storeAdminUser = selectedStore ? allUsers.find(u => u.storeId === selectedStore.id && u.role === 'admin') : null;
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-8 pb-20 w-full overflow-x-auto min-w-0">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>

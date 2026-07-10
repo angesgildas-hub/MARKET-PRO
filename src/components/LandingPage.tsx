@@ -16,9 +16,11 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { StoreSettings } from '../types';
 import LegalDocsModal from './LegalDocsModal';
+import defaultLogo from '../assets/images/market_pro_logo_1781718180029.jpg';
 
 const features = [
   {
@@ -102,6 +104,7 @@ export default function LandingPage() {
   const [storeSettings, setStoreSettings] = useState<StoreSettings | null>(null);
   const [isLegalOpen, setIsLegalOpen] = useState(false);
   const [legalTab, setLegalTab] = useState<'cgu' | 'privacy'>('cgu');
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
     const fetchStore = async () => {
@@ -115,6 +118,11 @@ export default function LandingPage() {
       }
     };
     fetchStore();
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribe();
   }, []);
 
   return (
@@ -123,16 +131,16 @@ export default function LandingPage() {
       <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 px-6 lg:px-12 py-4 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-3 group">
           <div className="w-10 h-10 bg-gradient-to-tr from-orange-500 to-orange-400 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20 transform rotate-6 group-hover:rotate-0 transition-transform overflow-hidden">
-            {storeSettings?.logoUrl ? (
-              <img src={storeSettings.logoUrl} alt="Logo" className="w-full h-full object-cover" />
-            ) : (
-              <ShoppingBag size={20} className="text-white" />
-            )}
+            <img src={storeSettings?.logoUrl || defaultLogo} alt="Logo" className="w-full h-full object-cover" />
           </div>
-          <span className="text-xl font-black tracking-tight text-slate-900 italic uppercase">{storeSettings?.name || 'MARKET PRO'}</span>
+          <span className="text-xl font-black tracking-tight text-slate-900 italic uppercase">{(storeSettings?.name === 'MARKET PRO GLOBAL' || !storeSettings?.name) ? 'MARKET PRO' : storeSettings.name}</span>
         </Link>
         <div className="flex items-center gap-6">
-          <Link to="/login" className="text-sm font-black uppercase tracking-widest text-slate-400 hover:text-orange-500 transition-colors">Connexion</Link>
+          {currentUser ? (
+            <Link to="/dashboard" className="text-sm font-black uppercase tracking-widest text-orange-500 hover:text-orange-600 transition-colors">Accéder au Tableau de Bord</Link>
+          ) : (
+            <Link to="/login" className="text-sm font-black uppercase tracking-widest text-slate-400 hover:text-orange-500 transition-colors">Connexion</Link>
+          )}
         </div>
       </nav>
 
@@ -150,13 +158,23 @@ export default function LandingPage() {
             <p className="text-lg text-slate-500 mb-10 max-w-lg font-medium leading-relaxed">
               La plateforme tout-en-un pour les commerçants modernes. Automatisez vos ventes, suivez vos stocks et boostez votre croissance.
             </p>
-            <Link 
-              to="/register"
-              className="inline-flex items-center gap-4 px-8 py-5 bg-orange-600 text-white rounded-[32px] font-black uppercase tracking-[0.2em] text-sm hover:bg-orange-700 transition-all shadow-2xl shadow-orange-600/30 group"
-            >
-              <span>Commencer Maintenant</span>
-              <ArrowRight className="group-hover:translate-x-2 transition-transform" />
-            </Link>
+            {currentUser ? (
+              <Link 
+                to="/dashboard"
+                className="inline-flex items-center gap-4 px-8 py-5 bg-orange-600 text-white rounded-[32px] font-black uppercase tracking-[0.2em] text-sm hover:bg-orange-700 transition-all shadow-2xl shadow-orange-600/30 group animate-pulse"
+              >
+                <span>Accéder au Tableau de Bord</span>
+                <ArrowRight className="group-hover:translate-x-2 transition-transform" />
+              </Link>
+            ) : (
+              <Link 
+                to="/register"
+                className="inline-flex items-center gap-4 px-8 py-5 bg-orange-600 text-white rounded-[32px] font-black uppercase tracking-[0.2em] text-sm hover:bg-orange-700 transition-all shadow-2xl shadow-orange-600/30 group"
+              >
+                <span>Commencer Maintenant</span>
+                <ArrowRight className="group-hover:translate-x-2 transition-transform" />
+              </Link>
+            )}
             
             <div className="mt-12 flex items-center gap-8 opacity-60 grayscale hover:grayscale-0 transition-all">
               <div className="flex items-center gap-2">
@@ -339,13 +357,9 @@ export default function LandingPage() {
           <div>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-gradient-to-tr from-orange-500 to-orange-400 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20 transform rotate-6 overflow-hidden">
-                {storeSettings?.logoUrl ? (
-                  <img src={storeSettings.logoUrl} alt="Logo" className="w-full h-full object-cover" />
-                ) : (
-                  <ShoppingBag size={20} className="text-white" />
-                )}
+                <img src={storeSettings?.logoUrl || defaultLogo} alt="Logo" className="w-full h-full object-cover" />
               </div>
-              <span className="text-xl font-black tracking-tight italic uppercase text-slate-900">{storeSettings?.name || 'MARKET PRO'}</span>
+              <span className="text-xl font-black tracking-tight italic uppercase text-slate-900">{(storeSettings?.name === 'MARKET PRO GLOBAL' || !storeSettings?.name) ? 'MARKET PRO' : storeSettings.name}</span>
             </div>
             <p className="text-slate-500 text-sm max-w-xs font-sans">Propulsé par G-LAB TECH. Solutions logicielles intelligentes pour l'Afrique de demain.</p>
           </div>

@@ -15,6 +15,7 @@ import { doc, getDoc, setDoc, serverTimestamp, collection, addDoc, query, where,
 import { AppContext } from '../App';
 import { StoreSettings } from '../types';
 import { Link, useNavigate } from 'react-router-dom';
+import defaultLogo from '../assets/images/market_pro_logo_1781718180029.jpg';
 
 export default function Login() {
   const { language } = useContext(AppContext);
@@ -263,6 +264,12 @@ export default function Login() {
     }
   };
 
+  const [isInIframe, setIsInIframe] = useState(false);
+
+  useEffect(() => {
+    setIsInIframe(window.self !== window.top);
+  }, []);
+
   const handleGoogleLogin = async () => {
     setLoading(true);
     isSyncingRef.current = true;
@@ -279,6 +286,16 @@ export default function Login() {
       
       // Handle closed popup silently
       if (error.code === 'auth/popup-closed-by-user') {
+        setLoading(false);
+        return;
+      }
+
+      if (error.code === 'auth/network-request-failed' || (error.message && error.message.includes('network-request-failed'))) {
+        alert("La connexion avec Google a échoué (Erreur réseau/iframe).\n\n" +
+              "Ce problème se produit fréquemment lorsque l'application s'exécute à l'intérieur d'un iframe de prévisualisation (comme celui d'AI Studio) en raison des restrictions de sécurité du navigateur sur les cookies tiers et les fenêtres pop-up.\n\n" +
+              "Pour résoudre cela, veuillez :\n" +
+              "1. Ouvrir l'application dans un nouvel onglet complet à l'aide de l'icône de redirection en haut à droite de l'aperçu.\n" +
+              "2. Ou bien, utiliser la connexion par E-mail et Mot de passe (par exemple, gildas@gmail.com ou anges.gildas@gmail.com).");
         setLoading(false);
         return;
       }
@@ -384,10 +401,6 @@ export default function Login() {
         setLoading(false);
         return;
       }
-      if (!auth.currentUser) {
-        setLoading(false);
-        return;
-      }
       const isAuthError = error.code && error.code.startsWith('auth/');
       if (isAuthError) {
         console.warn("Auth failure:", error.code, error.message);
@@ -395,7 +408,7 @@ export default function Login() {
         console.error("Email Auth error:", error);
       }
 
-      if (error.message.includes('suspendu')) {
+      if (error.message && error.message.includes('suspendu')) {
         alert(error.message);
         setLoading(false);
         return;
@@ -414,6 +427,15 @@ export default function Login() {
         message = "Le mot de passe doit contenir au moins 6 caractères.";
       } else if (error.code === 'auth/too-many-requests') {
         message = "Trop de tentatives échouées. Compte temporairement bloqué. Réessayez plus tard.";
+      } else if (error.code === 'auth/network-request-failed' || (error.message && error.message.includes('network-request-failed'))) {
+        message = "Échec de connexion réseau (auth/network-request-failed).\n\n" +
+                  "⚠️ Un bloqueur de publicités (AdBlock, uBlock, Brave Shield), un VPN, un pare-feu ou un DNS sécurisé bloque probablement la communication avec Google Firebase.\n\n" +
+                  "Résolution :\n" +
+                  "- Désactivez vos bloqueurs de publicité ou VPN pour ce site.\n" +
+                  "- Assurez-vous d'avoir une connexion Internet active.\n" +
+                  "- Essayez d'ouvrir l'application dans un autre navigateur ou une fenêtre de navigation privée.";
+      } else if (error.message) {
+        message = error.message;
       }
       
       alert(message);
@@ -475,14 +497,10 @@ export default function Login() {
                 transition={{ delay: 0.2, type: "spring", damping: 12 }}
                 className="w-24 h-24 bg-gradient-to-tr from-orange-500 to-orange-400 rounded-[32px] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-orange-500/30 transform rotate-6 overflow-hidden"
               >
-                {storeSettings?.logoUrl ? (
-                  <img src={storeSettings.logoUrl} alt="Logo" className="w-full h-full object-cover" />
-                ) : (
-                  <ShoppingBag size={44} className="text-white" />
-                )}
+                <img src={storeSettings?.logoUrl || defaultLogo} alt="Logo" className="w-full h-full object-cover" />
               </motion.div>
               <h1 className="text-4xl font-black text-slate-900 mb-2 tracking-tight italic">
-                {storeSettings?.name || 'MARKET PRO'}
+                {(storeSettings?.name === 'MARKET PRO GLOBAL' || !storeSettings?.name) ? 'MARKET PRO' : storeSettings.name}
               </h1>
               <div className="flex items-center justify-center gap-3">
                 <div className="h-px w-6 bg-slate-200" />
@@ -602,6 +620,16 @@ export default function Login() {
                   <Globe size={18} className="text-blue-500" />
                   <span>Google Cloud Identity</span>
                 </button>
+
+                {isInIframe && (
+                  <div className="mt-4 p-3.5 bg-amber-50 rounded-[20px] border border-amber-100 text-[10px] text-amber-900 leading-relaxed text-left flex gap-2.5 shadow-sm">
+                    <span className="text-amber-500 font-bold text-xs">⚠️</span>
+                    <div>
+                      <strong className="font-black uppercase text-[9px] tracking-wider text-amber-800 block mb-0.5">Note de compatibilité</strong>
+                      En mode prévisualisation, Google Login peut être bloqué par les restrictions de l'iframe. Veuillez ouvrir l'application dans un <a href={window.location.href} target="_blank" rel="noopener noreferrer" className="underline text-[#4F8CFF] hover:text-[#3b72db] font-extrabold">nouvel onglet ↗</a> ou vous connecter avec vos identifiants e-mail (ex: <code className="font-mono bg-amber-100 px-1 py-0.5 rounded text-amber-950">gildas@gmail.com</code>).
+                    </div>
+                  </div>
+                )}
               </>
             )}
 

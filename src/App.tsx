@@ -39,6 +39,7 @@ import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import Dashboard from './components/Dashboard';
+import defaultLogo from './assets/images/market_pro_logo_1781718180029.jpg';
 import Inventory from './components/Inventory';
 import Pos from './components/Pos';
 import SalesHistory from './components/SalesHistory';
@@ -82,6 +83,7 @@ function UserHeader({ isLicenseValid }: { isLicenseValid: boolean }) {
   const { language, searchQuery, setSearchQuery, userRole, lowStockCount, userProfile, settings } = useContext(AppContext);
   const t = translations[language];
   const user = auth.currentUser;
+  const isAdmin = userRole === 'admin' || userRole === 'super-admin' || user?.email === 'anges.gildas@gmail.com' || user?.email === 'gildas@gmail.com';
   const [time, setTime] = useState(new Date());
   const [familyStores, setFamilyStores] = useState<StoreSettings[]>([]);
 
@@ -90,6 +92,7 @@ function UserHeader({ isLicenseValid }: { isLicenseValid: boolean }) {
   const [chatMessagesList, setChatMessagesList] = useState<any[]>([]);
   const [leavesList, setLeavesList] = useState<any[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [activeNotificationTab, setActiveNotificationTab] = useState<'all' | 'alerts' | 'messages'>('all');
   
   // Custom Calendar States & Utility
@@ -751,21 +754,90 @@ function UserHeader({ isLicenseValid }: { isLicenseValid: boolean }) {
             </AnimatePresence>
           </div>
           <div className="w-px h-10 bg-gray-100 hidden md:block" />
-          <Link to="/settings?tab=profile" className="flex items-center gap-4 group hover:opacity-85 transition-all">
-            <div className="text-right hidden sm:block">
-               <p className="text-sm font-extrabold text-[#111827]">{userProfile?.displayName || user?.displayName}</p>
-               <p className="text-[10px] text-[#4F8CFF] font-bold uppercase tracking-widest leading-none mt-0.5">En Ligne</p>
-            </div>
-            <div className="w-11 h-11 rounded-full bg-slate-100 border-2 border-white shadow-[0_4px_12px_rgba(79,140,255,0.15)] flex items-center justify-center overflow-hidden group-hover:scale-105 transition-transform cursor-pointer">
-               {userProfile?.photoURL ? (
-                 <img src={userProfile.photoURL} referrerPolicy="no-referrer" alt="" className="w-full h-full object-cover" />
-               ) : user?.photoURL ? (
-                 <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="w-full h-full object-cover" />
-               ) : (
-                 <User size={20} className="text-gray-400" />
-               )}
-            </div>
-          </Link>
+          <div className="relative">
+            <button 
+              onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+              className="flex items-center gap-4 group hover:opacity-85 transition-all focus:outline-none"
+            >
+              <div className="text-right hidden sm:block text-left">
+                 <p className="text-sm font-extrabold text-[#111827]">{userProfile?.displayName || user?.displayName}</p>
+                 <p className="text-[10px] text-[#4F8CFF] font-bold uppercase tracking-widest leading-none mt-0.5">En Ligne</p>
+              </div>
+              <div className="w-11 h-11 rounded-full bg-slate-100 border-2 border-white shadow-[0_4px_12px_rgba(79,140,255,0.15)] flex items-center justify-center overflow-hidden group-hover:scale-105 transition-transform cursor-pointer">
+                 {userProfile?.photoURL ? (
+                   <img src={userProfile.photoURL} referrerPolicy="no-referrer" alt="" className="w-full h-full object-cover" />
+                 ) : user?.photoURL ? (
+                   <img src={user.photoURL} referrerPolicy="no-referrer" alt="" className="w-full h-full object-cover" />
+                 ) : (
+                   <User size={20} className="text-gray-400" />
+                 )}
+              </div>
+            </button>
+
+            {isProfileDropdownOpen && (
+              <div 
+                className="fixed inset-0 z-40 bg-transparent" 
+                onClick={() => setIsProfileDropdownOpen(false)}
+              />
+            )}
+
+            <AnimatePresence>
+              {isProfileDropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 mt-3 w-64 bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 z-50 font-sans origin-top-right text-slate-800"
+                >
+                  {isAdmin ? (
+                    <>
+                      <div className="px-2 py-1.5 border-b border-gray-50 mb-2 text-left">
+                        <p className="text-xs font-black text-slate-900 truncate">{userProfile?.displayName || user?.displayName}</p>
+                        <p className="text-[9px] text-gray-400 font-extrabold uppercase mt-0.5 tracking-wider">
+                          Rôle : {userRole === 'admin' ? 'Administrateur' : userRole === 'manager' ? 'Gérant' : 'Caissier'}
+                        </p>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Link
+                          to="/settings?tab=profile"
+                          onClick={() => setIsProfileDropdownOpen(false)}
+                          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
+                        >
+                          <User size={14} className="text-slate-400" />
+                          Mon Profil
+                        </Link>
+                        <button
+                          onClick={() => {
+                            setIsProfileDropdownOpen(false);
+                            signOut(auth);
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-black text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors cursor-pointer text-left"
+                        >
+                          <LogOut size={14} className="text-red-500" />
+                          Se Déconnecter
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-1">
+                      <button
+                        onClick={() => {
+                          setIsProfileDropdownOpen(false);
+                          signOut(auth);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-black text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors cursor-pointer text-left"
+                      >
+                        <LogOut size={14} className="text-red-500" />
+                        Se Déconnecter
+                      </button>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
        </div>
     </header>
   );
@@ -777,16 +849,16 @@ function Sidebar() {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
    const menuItems = [
-    { icon: LayoutDashboard, label: t.dashboard, path: '/', id: 'dashboard', module: 'reports' },
+    { icon: LayoutDashboard, label: t.dashboard, path: '/dashboard', id: 'dashboard', module: 'reports' },
     { icon: ShoppingCart, label: t.pos, path: '/pos', id: 'pos', module: 'pos' },
-    { icon: ClipboardList, label: t.orders || 'Commandes', path: '/commandes', id: 'commandes', module: 'pos' },
-    { icon: Smartphone, label: t.mobile_money || 'Transactions Mobiles', path: '/mobile-money', id: 'mobile_money', module: 'pos' },
+    { icon: ClipboardList, label: t.orders || 'Commandes', path: '/commandes', id: 'commandes', module: 'commandes' },
+    { icon: Smartphone, label: t.mobile_money || 'Transactions Mobiles', path: '/mobile-money', id: 'mobile_money', module: 'mobile_money' },
     { icon: Package, label: t.inventory, path: '/inventory', id: 'inventory', module: 'inventory' },
     { icon: History, label: t.history, path: '/sales', id: 'sales', module: 'sales' },
     { icon: BarChart3, label: t.accounting, path: '/accounting', id: 'accounting', module: 'accounting' },
     { icon: Users, label: t.customers, path: '/clients', id: 'clients', module: 'clients' },
     { icon: UserCheck, label: t.personnel, path: '/personnel', id: 'personnel', module: 'personnel' },
-    { icon: MessageSquare, label: 'Messagerie', path: '/chat', id: 'chat', module: 'none' },
+    { icon: MessageSquare, label: 'Messagerie', path: '/chat', id: 'chat', module: 'chat' },
     { icon: SettingsIcon, label: t.settings, path: '/settings', id: 'settings', module: 'settings' },
   ];
 
@@ -832,11 +904,7 @@ function Sidebar() {
         <div className="p-8 shrink-0">
           <div className="flex items-center gap-3.5 mb-2">
             <div className="bg-[#F0F6FF] border border-[#4F8CFF]/20 w-11 h-11 rounded-[14px] shadow-sm overflow-hidden flex items-center justify-center">
-              {settings?.logoUrl ? (
-                <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-cover" />
-              ) : (
-                <ShoppingBag size={22} className="text-[#4F8CFF]" />
-              )}
+              <img src={settings?.logoUrl || defaultLogo} alt="Logo" className="w-full h-full object-cover" />
             </div>
             <div className="flex flex-col">
               <span className="text-[15px] font-extrabold tracking-tight text-[#111827]">{t.app_name}</span>
@@ -918,13 +986,26 @@ function AppRoutes({
   const navigate = useNavigate();
   const [hasRedirected, setHasRedirected] = useState(false);
 
+  // Scroll window and main content to top on every route/location change
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    const mainEl = document.querySelector('main');
+    if (mainEl) {
+      mainEl.scrollTop = 0;
+    }
+    const flexEl = document.querySelector('.flex-1');
+    if (flexEl) {
+      flexEl.scrollTop = 0;
+    }
+  }, [location.pathname]);
+
   // Redirect to dashboard on fresh login if on public/auth routes
   useEffect(() => {
     const isPublicRoute = location.pathname === '/login' || location.pathname === '/register';
     const isFullyLoggedIn = user && userProfile && userProfile.isActive !== false && !userProfile.pendingApproval;
 
     if (isFullyLoggedIn && isPublicRoute && !hasRedirected) {
-      navigate('/', { replace: true });
+      navigate('/dashboard', { replace: true });
       setHasRedirected(true);
     }
     if (!user) {
@@ -973,6 +1054,10 @@ function AppRoutes({
     );
   }
 
+  if (location.pathname === '/') {
+    return <LandingPage />;
+  }
+
   if (userProfile?.pendingApproval || userProfile?.isActive === false) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6 font-sans">
@@ -1009,19 +1094,19 @@ function AppRoutes({
         <main className={`flex-1 p-4 ${isPosPage ? 'sm:p-6 lg:p-8 pt-24 lg:pt-[106px] lg:pb-4' : 'sm:p-6 lg:p-10 pt-28 lg:pt-32'}`}>
           <AnimatePresence mode="wait">
             <Routes location={location}>
-              <Route path="/" element={<PageTransition><Dashboard /></PageTransition>} />
-              <Route path="/pos" element={hasAccess('pos') ? <PageTransition><Pos /></PageTransition> : <Navigate to="/" />} />
-              <Route path="/commandes" element={hasAccess('pos') ? <PageTransition><Commandes /></PageTransition> : <Navigate to="/" />} />
-              <Route path="/inventory" element={hasAccess('inventory') ? <PageTransition><Inventory /></PageTransition> : <Navigate to="/" />} />
-              <Route path="/sales" element={hasAccess('sales') ? <PageTransition><SalesHistory /></PageTransition> : <Navigate to="/" />} />
-              <Route path="/accounting" element={hasAccess('accounting') ? <PageTransition><Accounting /></PageTransition> : <Navigate to="/" />} />
-              <Route path="/mobile-money" element={hasAccess('mobile_money') ? <PageTransition><MobileMoney /></PageTransition> : <Navigate to="/" />} />
-              <Route path="/personnel" element={hasAccess('personnel') ? <PageTransition><Personnel /></PageTransition> : <Navigate to="/" />} />
-              <Route path="/clients" element={hasAccess('clients') ? <PageTransition><Clients /></PageTransition> : <Navigate to="/" />} />
-              <Route path="/settings" element={hasAccess('settings') ? <PageTransition><Settings /></PageTransition> : <Navigate to="/" />} />
+              <Route path="/dashboard" element={<PageTransition><Dashboard /></PageTransition>} />
+              <Route path="/pos" element={hasAccess('pos') ? <PageTransition><Pos /></PageTransition> : <Navigate to="/dashboard" />} />
+              <Route path="/commandes" element={hasAccess('pos') ? <PageTransition><Commandes /></PageTransition> : <Navigate to="/dashboard" />} />
+              <Route path="/inventory" element={hasAccess('inventory') ? <PageTransition><Inventory /></PageTransition> : <Navigate to="/dashboard" />} />
+              <Route path="/sales" element={hasAccess('sales') ? <PageTransition><SalesHistory /></PageTransition> : <Navigate to="/dashboard" />} />
+              <Route path="/accounting" element={hasAccess('accounting') ? <PageTransition><Accounting /></PageTransition> : <Navigate to="/dashboard" />} />
+              <Route path="/mobile-money" element={hasAccess('mobile_money') ? <PageTransition><MobileMoney /></PageTransition> : <Navigate to="/dashboard" />} />
+              <Route path="/personnel" element={hasAccess('personnel') ? <PageTransition><Personnel /></PageTransition> : <Navigate to="/dashboard" />} />
+              <Route path="/clients" element={hasAccess('clients') ? <PageTransition><Clients /></PageTransition> : <Navigate to="/dashboard" />} />
+              <Route path="/settings" element={hasAccess('settings') ? <PageTransition><Settings /></PageTransition> : <Navigate to="/dashboard" />} />
               <Route path="/chat" element={<PageTransition><Chat /></PageTransition>} />
-              <Route path="/super-admin" element={['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((auth.currentUser?.email || '').trim().toLowerCase()) ? <PageTransition><SuperAdmin /></PageTransition> : <Navigate to="/" />} />
-              <Route path="*" element={<Navigate to="/" />} />
+              <Route path="/super-admin" element={['anges.gildas@gmail.com', 'gildas@gmail.com'].includes((auth.currentUser?.email || '').trim().toLowerCase()) ? <PageTransition><SuperAdmin /></PageTransition> : <Navigate to="/dashboard" />} />
+              <Route path="*" element={<Navigate to="/dashboard" />} />
             </Routes>
           </AnimatePresence>
         </main>
@@ -1179,6 +1264,41 @@ export default function App() {
     });
     return () => unsubProducts();
   }, [user, userProfile?.storeId]);
+
+  // Global horizontal scrolling using Left/Right arrow keys
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT' ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        const scrollableElements = Array.from(document.querySelectorAll('.overflow-x-auto, .overflow-x-scroll')) as HTMLElement[];
+        const activeContainer = scrollableElements.find(el => {
+          const rect = el.getBoundingClientRect();
+          const isVisible = rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0;
+          return isVisible && el.scrollWidth > el.clientWidth;
+        });
+
+        if (activeContainer) {
+          e.preventDefault();
+          const amount = e.key === 'ArrowRight' ? 200 : -200;
+          activeContainer.scrollBy({ left: amount, behavior: 'smooth' });
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   useEffect(() => {
     if (!user || !userProfile?.storeId) {

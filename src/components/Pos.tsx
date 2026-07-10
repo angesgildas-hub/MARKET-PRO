@@ -37,6 +37,7 @@ import { Product, CartItem, PaymentMethod, StoreSettings, Client, Commande } fro
 import { AppContext } from '../App';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import defaultLogo from '../assets/images/market_pro_logo_1781718180029.jpg';
 
 export default function Pos() {
   const navigate = useNavigate();
@@ -78,6 +79,27 @@ export default function Pos() {
   const [latestNewOrder, setLatestNewOrder] = useState<Commande | null>(null);
   const [isOrdersDrawerOpen, setIsOrdersDrawerOpen] = useState(false);
   const isInitRef = useRef(false);
+
+  // --- OFFLINE & TOGO MOBILE MONEY SYSTEM ---
+  const [offlineSales, setOfflineSales] = useState<any[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  
+  const [momoOperator, setMomoOperator] = useState<'tmoney' | 'flooz'>('tmoney');
+  const [momoPhoneNumber, setMomoPhoneNumber] = useState('');
+  const [momoTransactionId, setMomoTransactionId] = useState('');
+  const [momoStatus, setMomoStatus] = useState<'none' | 'simulating' | 'success'>('none');
+  const [momoError, setMomoError] = useState('');
+
+  // --- BLUETOOTH PRINTING ---
+  const [btDevice, setBtDevice] = useState<any>(null);
+  const [btCharacteristic, setBtCharacteristic] = useState<any>(null);
+  const [isBtConnecting, setIsBtConnecting] = useState(false);
+  const [isBtPrinting, setIsBtPrinting] = useState(false);
+  const [btError, setBtError] = useState('');
+
+  // --- DIGITAL RECEIPTS ---
+  const [sharePhoneNumber, setSharePhoneNumber] = useState('');
 
   const cartListRef = useRef<HTMLDivElement>(null);
 
@@ -174,6 +196,438 @@ export default function Pos() {
       return () => clearTimeout(timer);
     }
   }, [showNotificationBanner]);
+
+  // --- OFFLINE/ONLINE LISTENERS ---
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      console.log("POS is online. Auto-syncing...");
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      console.log("POS is offline.");
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // --- PRELOAD AND CACHE LOCALSTORAGE HOOK ---
+  useEffect(() => {
+    if (!userProfile?.storeId) return;
+
+    // Load caches if available
+    const cachedProds = localStorage.getItem(`marketpro-products-${userProfile.storeId}`);
+    if (cachedProds) {
+      try { setProducts(JSON.parse(cachedProds)); } catch (e) { console.error(e); }
+    }
+
+    const cachedSettings = localStorage.getItem(`marketpro-settings-${userProfile.storeId}`);
+    if (cachedSettings) {
+      try { setStoreSettings(JSON.parse(cachedSettings)); } catch (e) { console.error(e); }
+    }
+
+    const cachedClients = localStorage.getItem(`marketpro-clients-${userProfile.storeId}`);
+    if (cachedClients) {
+      try { setClients(JSON.parse(cachedClients)); } catch (e) { console.error(e); }
+    }
+
+    const cachedOffline = localStorage.getItem(`marketpro-offline-sales-${userProfile.storeId}`);
+    if (cachedOffline) {
+      try { setOfflineSales(JSON.parse(cachedOffline)); } catch (e) { console.error(e); }
+    }
+  }, [userProfile?.storeId]);
+
+  // --- TRIGGERS SYNC WHEN ONLINE AND THERE ARE PENDING SALES ---
+  useEffect(() => {
+    if (isOnline && offlineSales.length > 0 && !isSyncing) {
+      syncOfflineSales();
+    }
+  }, [isOnline, offlineSales.length, isSyncing]);
+
+  // Synchronize client selection with Mobile Money and share inputs
+  useEffect(() => {
+    if (selectedClient) {
+      setMomoPhoneNumber(selectedClient.phone || '');
+      setSharePhoneNumber(selectedClient.phone || '');
+    } else {
+      setMomoPhoneNumber('');
+      setSharePhoneNumber('');
+    }
+    setMomoTransactionId('');
+    setMomoStatus('none');
+    setMomoError('');
+  }, [selectedClient]);
+
+  // Bluetooth Reconnect Simulation if paired
+  useEffect(() => {
+    const cachedName = localStorage.getItem('marketpro-bt-printer-name');
+    if (cachedName) {
+      console.log("Found previously paired Bluetooth thermal printer:", cachedName);
+    }
+  }, []);
+
+  const syncOfflineSales = async () => {
+    if (isSyncing || !isOnline || offlineSales.length === 0) return;
+    setIsSyncing(true);
+    
+    const salesToSync = [...offlineSales];
+    const syncedIds: string[] = [];
+    
+    try {
+      for (const sale of salesToSync) {
+        // Create sale ref
+        const targetSaleId = sale.id.startsWith('offline_') ? doc(collection(db, 'sales')).id : sale.id;
+        const saleRef = doc(db, 'sales', targetSaleId);
+        
+        // Prepare firestore-compatible timestamp
+        const finalSaleData = {
+          storeId: sale.storeId,
+          timestamp: serverTimestamp(),
+          cashierId: sale.cashierId,
+          cashierName: sale.cashierName,
+          totalAmount: sale.totalAmount,
+          discount: sale.discount,
+          amountReceived: sale.amountReceived,
+          change: sale.change,
+          paymentMethod: sale.paymentMethod,
+          itemsCount: sale.itemsCount,
+          ...(sale.clientId ? { clientId: sale.clientId } : {}),
+          ...(sale.clientName ? { clientName: sale.clientName } : {}),
+          ...(sale.clientPhone ? { clientPhone: sale.clientPhone } : {}),
+          ...(sale.clientMatricule ? { clientMatricule: sale.clientMatricule } : {}),
+          // Store mobile details if present
+          ...(sale.momoOperator ? {
+            momoOperator: sale.momoOperator,
+            momoPhoneNumber: sale.momoPhoneNumber,
+            momoTransactionId: sale.momoTransactionId,
+            momoStatus: 'success'
+          } : {})
+        };
+        
+        // Write sale doc
+        await setDoc(saleRef, finalSaleData);
+        
+        // Write items & update product stock in Firestore
+        for (const item of sale.items) {
+          const itemRef = doc(collection(db, `sales/${targetSaleId}/items`));
+          await setDoc(itemRef, {
+            storeId: sale.storeId,
+            productId: item.productId,
+            name: item.name,
+            quantity: item.quantity,
+            priceAtSale: item.priceAtSale,
+            total: item.total
+          });
+          
+          // Atomic stock decrement
+          const productRef = doc(db, 'products', item.productId);
+          try {
+            const prodSnap = await getDoc(productRef);
+            if (prodSnap.exists()) {
+              const currentStock = prodSnap.data().stock || 0;
+              await updateDoc(productRef, { stock: Math.max(0, currentStock - item.quantity) });
+            }
+          } catch (e) {
+            console.error("Stock adjust failed for synchronized sale product:", e);
+          }
+        }
+        
+        // If there was a client, update client's stats in Firestore
+        if (sale.clientId) {
+          const clientRef = doc(db, 'clients', sale.clientId);
+          try {
+            const clientSnap = await getDoc(clientRef);
+            if (clientSnap.exists()) {
+              await updateDoc(clientRef, {
+                totalSpent: (clientSnap.data().totalSpent || 0) + sale.totalAmount,
+                visitsCount: (clientSnap.data().visitsCount || 0) + 1,
+                lastVisit: serverTimestamp(),
+              });
+            }
+          } catch (e) {
+            console.error("Client update failed for synchronized sale client:", e);
+          }
+        }
+
+        // Include in mobile transactions if it was momo
+        if (sale.momoOperator) {
+          try {
+            const mobileTxRef = doc(collection(db, 'mobileTransactions'));
+            await setDoc(mobileTxRef, {
+              storeId: sale.storeId,
+              timestamp: serverTimestamp(),
+              cashierId: sale.cashierId,
+              cashierName: sale.cashierName,
+              operator: sale.momoOperator,
+              type: 'withdrawal',
+              amount: sale.totalAmount,
+              commission: Math.round(sale.totalAmount * 0.01 * 0.3),
+              feesPaid: Math.round(sale.totalAmount * 0.01),
+              clientPhone: sale.momoPhoneNumber,
+              clientName: sale.clientName || 'Client de passage',
+              referenceId: sale.momoTransactionId,
+              status: 'completed',
+              notes: `Vente de caisse POS #${targetSaleId.slice(-6)} (Synchronise)`,
+              countryCode: 'TG',
+              merchantNumber: sale.momoOperator === 'tmoney' ? '90000000' : '99000000'
+            });
+          } catch (momoErr) {
+            console.error("Failed to write mobile money sync transaction:", momoErr);
+          }
+        }
+
+        // Add to synced list
+        syncedIds.push(sale.id);
+      }
+      
+      // Filter out successfully synced sales
+      const remainingSales = salesToSync.filter(s => !syncedIds.includes(s.id));
+      setOfflineSales(remainingSales);
+      localStorage.setItem(`marketpro-offline-sales-${userProfile?.storeId}`, JSON.stringify(remainingSales));
+      
+      if (syncedIds.length > 0) {
+        playNotificationSound();
+      }
+    } catch (err) {
+      console.error("Error during background sync:", err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const connectBluetoothPrinter = async () => {
+    setIsBtConnecting(true);
+    setBtError('');
+    try {
+      const nav = navigator as any;
+      if (!nav.bluetooth) {
+        throw new Error("Web Bluetooth n'est pas supporte ou active sur ce navigateur/iframe.");
+      }
+      
+      const device = await nav.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: ['00001101-0000-1000-8000-00805f9b34fb', '000018f0-0000-1000-8000-00805f9b34fb']
+      });
+      
+      const server = await device.gatt?.connect();
+      if (!server) {
+        throw new Error("Impossible de se connecter au serveur GATT de l'imprimante.");
+      }
+      
+      let service;
+      try {
+        service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+      } catch (e) {
+        try {
+          service = await server.getPrimaryService('00001101-0000-1000-8000-00805f9b34fb');
+        } catch (e2) {
+          const services = await server.getPrimaryServices();
+          if (services.length > 0) {
+            service = services[0];
+          } else {
+            throw new Error("Aucun service GATT d'impression thermique detecte.");
+          }
+        }
+      }
+      
+      const characteristics = await service.getCharacteristics();
+      const writeChar = characteristics.find((c: any) => c.properties.write || c.properties.writeWithoutResponse);
+      
+      if (!writeChar) {
+        throw new Error("Caracteristique d'ecriture de donnees non trouvee.");
+      }
+      
+      setBtDevice(device);
+      setBtCharacteristic(writeChar);
+      localStorage.setItem('marketpro-bt-printer-name', device.name || 'Imprimante Thermique');
+    } catch (err: any) {
+      console.error(err);
+      setBtError(err.message || "La connexion a echoue. Utilisez l'impression standard.");
+    } finally {
+      setIsBtConnecting(false);
+    }
+  };
+
+  const printDirectThermal = async () => {
+    if (!btCharacteristic || !lastSaleData) {
+      setBtError("Veuillez d'abord connecter votre imprimante thermique.");
+      return;
+    }
+    setIsBtPrinting(true);
+    setBtError('');
+    try {
+      const esc = 0x1B;
+      const gs = 0x1D;
+      const encoder = new TextEncoder();
+      
+      const parts: Uint8Array[] = [];
+      const addText = (text: string) => parts.push(encoder.encode(text));
+      const addCmd = (cmd: number[]) => parts.push(new Uint8Array(cmd));
+      
+      addCmd([esc, 0x40]); // Reset
+      addCmd([esc, 0x61, 0x01]); // Align center
+      
+      addCmd([gs, 0x21, 0x11]); // Big font heading
+      addText(`${storeSettings?.name || 'MARKET PRO'}\n`);
+      addCmd([gs, 0x21, 0x00]); // Normal heading
+      
+      addText(`${storeSettings?.address || 'Lome, Togo'}\n`);
+      if (storeSettings?.phone) {
+        addText(`Tel: ${storeSettings.phone}\n`);
+      }
+      addText(`--------------------------------\n`);
+      
+      addCmd([esc, 0x61, 0x00]); // Left align
+      addText(`Date: ${lastSaleData.date.toLocaleDateString('fr-FR')} ${lastSaleData.date.toLocaleTimeString('fr-FR')}\n`);
+      addText(`Ticket: #${lastSaleData.id.slice(-8).toUpperCase()}\n`);
+      addText(`Caisse: ${userProfile?.displayName || 'Admin'}\n`);
+      if (lastSaleData.clientName) {
+        addText(`Client: ${lastSaleData.clientName}\n`);
+      }
+      addText(`--------------------------------\n`);
+      
+      addText(`Article          Qte   Total (FCFA)\n`);
+      addText(`--------------------------------\n`);
+      
+      lastSaleData.items.forEach(item => {
+        let nameLine = item.name.substring(0, 15);
+        while (nameLine.length < 16) nameLine += ' ';
+        const qtyStr = String(item.quantity).padStart(3, ' ');
+        const totalStr = String(item.total).padStart(11, ' ');
+        addText(`${nameLine}${qtyStr}${totalStr}\n`);
+      });
+      addText(`--------------------------------\n`);
+      
+      addCmd([esc, 0x61, 0x02]); // Right align
+      if (lastSaleData.discount > 0) {
+        addText(`Remise: -${lastSaleData.discount.toLocaleString()} FCFA\n`);
+      }
+      addCmd([esc, 0x45, 0x01]); // Bold text on
+      addText(`TOTAL NET: ${lastSaleData.total.toLocaleString()} FCFA\n`);
+      addCmd([esc, 0x45, 0x00]); // Bold text off
+      
+      if (paymentMethod === 'cash') {
+        addText(`Recu: ${lastSaleData.amountReceived.toLocaleString()} FCFA\n`);
+        addText(`Rendu: ${lastSaleData.change.toLocaleString()} FCFA\n`);
+      } else {
+        const methodLabel = paymentMethod === 'card' ? 'CARTE' : (momoOperator === 'flooz' ? 'FLOOZ' : 'T-MONEY');
+        addText(`Paiement: ${methodLabel}\n`);
+        if (momoTransactionId) {
+          addText(`Ref TX: ${momoTransactionId}\n`);
+        }
+      }
+      
+      addCmd([esc, 0x61, 0x01]); // Center align
+      addText(`--------------------------------\n`);
+      addText(`Merci pour votre confiance !\n`);
+      addText(`L'Imprimeur Market Pro\n\n\n\n\n`); // Spacer feed lines
+      
+      addCmd([gs, 0x56, 0x42, 0x00]); // Cut command
+      
+      // Merge
+      const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
+      const payload = new Uint8Array(totalLen);
+      let offset = 0;
+      parts.forEach(p => {
+        payload.set(p, offset);
+        offset += p.length;
+      });
+      
+      // BLE chunk write
+      const chunkSize = 20;
+      for (let i = 0; i < payload.length; i += chunkSize) {
+        const chunk = payload.slice(i, i + chunkSize);
+        await btCharacteristic.writeValue(chunk);
+      }
+      
+    } catch (err: any) {
+      console.error(err);
+      setBtError("L'envoi ESC/POS a echoue : " + (err.message || err));
+    } finally {
+      setIsBtPrinting(false);
+    }
+  };
+
+  const getDigitalReceiptMessage = () => {
+    if (!lastSaleData) return '';
+    const shopName = storeSettings?.name || 'MARKET PRO';
+    const dateStr = lastSaleData.date.toLocaleString('fr-FR');
+    const ticketId = lastSaleData.id.slice(-8).toUpperCase();
+    
+    let msg = `🧾 *REC'U DE CAISSE - ${shopName}*\n`;
+    msg += `--------------------------------------\n`;
+    msg += `📅 Date : ${dateStr}\n`;
+    msg += `🔢 Ticket : #${ticketId}\n`;
+    msg += `👤 Client : ${lastSaleData.clientName || 'Client de passage'}\n`;
+    msg += `--------------------------------------\n\n`;
+    msg += `📦 *Articles :*\n`;
+    
+    lastSaleData.items.forEach(item => {
+      msg += `▪️ ${item.quantity}x ${item.name} @ ${item.priceAtSale.toLocaleString()} FCFA = *${item.total.toLocaleString()} FCFA*\n`;
+    });
+    
+    msg += `\n--------------------------------------\n`;
+    if (lastSaleData.discount > 0) {
+      msg += `🔹 Remise : -${lastSaleData.discount.toLocaleString()} FCFA\n`;
+    }
+    msg += `💰 *TOTAL NET : ${lastSaleData.total.toLocaleString()} FCFA*\n`;
+    
+    if (paymentMethod === 'cash') {
+      msg += `💵 Recu : ${lastSaleData.amountReceived.toLocaleString()} FCFA\n`;
+      msg += `🔄 Rendu : ${lastSaleData.change.toLocaleString()} FCFA\n`;
+    } else {
+      const mode = paymentMethod === 'card' ? 'Carte Bancaire' : (momoOperator === 'flooz' ? 'Flooz (Moov Money)' : 'T-Money (Togocom)');
+      msg += `📱 Mode : ${mode}\n`;
+      if (momoTransactionId) {
+        msg += `🔑 Ref TX : ${momoTransactionId}\n`;
+      }
+    }
+    
+    msg += `\nMerci pour votre confiance ! A bientot ! 🙏✨`;
+    return msg;
+  };
+
+  const handleWhatsAppReceipt = (customPhone?: string) => {
+    const rawPhone = customPhone || sharePhoneNumber || lastSaleData?.clientPhone;
+    if (!rawPhone) {
+      alert("Veuillez saisir un numero de telephone.");
+      return;
+    }
+    const cleanPhone = rawPhone.replace(/\s+/g, '').replace('+', '');
+    const message = getDigitalReceiptMessage();
+    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  const handleSMSReceipt = (customPhone?: string) => {
+    const rawPhone = customPhone || sharePhoneNumber || lastSaleData?.clientPhone;
+    if (!rawPhone) {
+      alert("Veuillez saisir un numero de telephone.");
+      return;
+    }
+    const cleanPhone = rawPhone.replace(/\s+/g, '').replace('+', '');
+    const message = getDigitalReceiptMessage();
+    window.open(`sms:${cleanPhone}?body=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  const startMomoPaymentSimulation = () => {
+    if (!momoPhoneNumber) {
+      setMomoError("Veuillez saisir le numero de l'expediteur.");
+      return;
+    }
+    setMomoError('');
+    setMomoStatus('simulating');
+    
+    setTimeout(() => {
+      const randomRef = (momoOperator === 'tmoney' ? 'TM-' : 'FL-') + Math.floor(100000 + Math.random() * 900000);
+      setMomoTransactionId(randomRef);
+      setMomoStatus('success');
+      playNotificationSound();
+    }, 1500);
+  };
 
   useEffect(() => {
     if (products.length === 0) return;
@@ -604,100 +1058,65 @@ export default function Pos() {
         throw new Error("ID de boutique manquant. Veuillez vous reconnecter.");
       }
       let saleId = '';
-      const isOfflineMode = !navigator.onLine;
+      const isOfflineMode = !isOnline;
 
       if (isOfflineMode) {
-        // --- OFFLINE/CACHE OPTIMIZED WRITE PATH ---
-        const saleRef = doc(collection(db, 'sales'));
-        saleId = saleRef.id;
+        // --- BUILT-IN OFFLINE ROBUST FAILSAFE PATH ---
+        saleId = 'offline_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
         
-        const saleData: any = {
+        const offlineSaleData: any = {
+          id: saleId,
           storeId: userProfile.storeId,
-          timestamp: serverTimestamp(), // Firestore generates client-side estimates offline automatically
-          cashierId: auth.currentUser?.uid,
-          cashierName: userProfile?.displayName || auth.currentUser?.displayName || 'Admin',
+          timestamp: new Date().toISOString(),
+          cashierId: auth.currentUser?.uid || 'offline_cashier',
+          cashierName: userProfile?.displayName || 'Admin',
           totalAmount: saleTotal,
           discount: saleDiscount,
           amountReceived: saleAmountReceived,
           change: saleChange,
           paymentMethod,
           itemsCount: itemsToSave.length,
-          _isOfflineCreated: true
-        };
-
-        if (selectedClient) {
-          saleData.clientId = selectedClient.id;
-          saleData.clientName = selectedClient.name;
-          if (selectedClient.matricule) {
-            saleData.clientMatricule = selectedClient.matricule;
-          }
-          
-          // Only update client stats in Firestore if there is a valid client ID
-          if (selectedClient.id) {
-            const clientRef = doc(db, 'clients', selectedClient.id);
-            try {
-              const clientSnap = await getDoc(clientRef);
-              if (clientSnap.exists()) {
-                await updateDoc(clientRef, {
-                  totalSpent: (clientSnap.data().totalSpent || 0) + saleTotal,
-                  visitsCount: (clientSnap.data().visitsCount || 0) + 1,
-                  lastVisit: serverTimestamp(),
-                });
-              } else {
-                await updateDoc(clientRef, {
-                  totalSpent: saleTotal,
-                  visitsCount: 1,
-                  lastVisit: serverTimestamp(),
-                });
-              }
-            } catch (clientErr) {
-              console.warn("Client stats update postponed (offline mode):", clientErr);
-            }
-          }
-        }
-
-        // Set the sale document
-        await setDoc(saleRef, saleData);
-
-        // Update preloaded order status
-        if (loadedOrderId) {
-          const orderRef = doc(db, 'commandes', loadedOrderId);
-          try {
-            await updateDoc(orderRef, { status: 'completed' });
-          } catch (e) {
-            console.warn("Could not mark order completed (offline mode):", e);
-          }
-        }
-
-        // Save each item & adjust product inventory offline
-        await Promise.all(itemsToSave.map(async (item) => {
-          const itemRef = doc(collection(db, `sales/${saleRef.id}/items`));
-          await setDoc(itemRef, {
-            storeId: userProfile.storeId,
+          _isOfflineCreated: true,
+          items: itemsToSave.map(item => ({
             productId: item.productId,
             name: item.name,
             quantity: item.quantity,
             priceAtSale: item.priceAtSale,
             total: item.total
+          }))
+        };
+
+        if (selectedClient) {
+          offlineSaleData.clientId = selectedClient.id || '';
+          offlineSaleData.clientName = selectedClient.name || '';
+          offlineSaleData.clientPhone = selectedClient.phone || '';
+          offlineSaleData.clientMatricule = selectedClient.matricule || '';
+        }
+
+        // Include Togo Mobile Money information if applicable
+        if (paymentMethod === 'mobile') {
+          offlineSaleData.momoOperator = momoOperator;
+          offlineSaleData.momoPhoneNumber = momoPhoneNumber;
+          offlineSaleData.momoTransactionId = momoTransactionId || `SIM-TX-${Math.floor(100000 + Math.random() * 900000)}`;
+          offlineSaleData.momoStatus = 'success';
+        }
+
+        // Add to offline queue state and local storage
+        const updatedQueue = [...offlineSales, offlineSaleData];
+        setOfflineSales(updatedQueue);
+        localStorage.setItem(`marketpro-offline-sales-${userProfile.storeId}`, JSON.stringify(updatedQueue));
+
+        // Decrement products inventory locally in state and sync cache
+        setProducts(prev => {
+          const next = prev.map(p => {
+            const sold = itemsToSave.find(item => item.productId === p.id);
+            return sold ? { ...p, stock: Math.max(0, (p.stock || 0) - sold.quantity) } : p;
           });
+          localStorage.setItem(`marketpro-products-${userProfile.storeId}`, JSON.stringify(next));
+          return next;
+        });
 
-          // Update stock status offline
-          const productRef = doc(db, 'products', item.productId);
-          try {
-            const productSnap = await getDoc(productRef);
-            if (productSnap.exists()) {
-              const newStock = (productSnap.data().stock || 0) - item.quantity;
-              await updateDoc(productRef, { stock: newStock });
-            } else {
-              await updateDoc(productRef, {
-                stock: (item.stock || 5) - item.quantity
-              });
-            }
-          } catch (prodErr) {
-            console.warn("Product stock update queued (offline mode):", prodErr);
-          }
-        }));
-
+        // Set last sale info
         setLastSaleId(saleId);
         setLastSaleData({
           items: itemsToSave,
@@ -708,12 +1127,12 @@ export default function Pos() {
           id: saleId,
           date: new Date(),
           clientName: selectedClient?.name,
-          clientPhone: selectedClient?.phone,
+          clientPhone: selectedClient?.phone || momoPhoneNumber || undefined,
           clientMatricule: selectedClient?.matricule
         });
 
       } else {
-        // --- ONLINE TRANSACTION SECURE LOCK PATH ---
+        // --- ONLINE SECURE TRANSACTION ---
         await runTransaction(db, async (transaction) => {
           const productRefs = itemsToSave.map(item => doc(db, 'products', item.productId));
           const productSnaps = await Promise.all(productRefs.map(ref => transaction.get(ref)));
@@ -740,8 +1159,10 @@ export default function Pos() {
             if (selectedClient.matricule) {
               saleData.clientMatricule = selectedClient.matricule;
             }
+            if (selectedClient.phone) {
+              saleData.clientPhone = selectedClient.phone;
+            }
             
-            // Update client stats only if we have a valid client document ID
             if (selectedClient.id) {
               const clientRef = doc(db, 'clients', selectedClient.id);
               const clientSnap = await transaction.get(clientRef);
@@ -753,6 +1174,35 @@ export default function Pos() {
                 });
               }
             }
+          }
+
+          // Include Togo Mobile Money fields if payment method is mobile money
+          if (paymentMethod === 'mobile') {
+            saleData.momoOperator = momoOperator;
+            saleData.momoPhoneNumber = momoPhoneNumber;
+            saleData.momoTransactionId = momoTransactionId || `SIM-TX-${Math.floor(100000 + Math.random() * 900000)}`;
+            saleData.momoStatus = 'success';
+
+            // Log into mobileTransactions list for Mobile Money consistency
+            const mobileTxRef = doc(collection(db, 'mobileTransactions'));
+            transaction.set(mobileTxRef, {
+              storeId: userProfile.storeId,
+              timestamp: serverTimestamp(),
+              cashierId: auth.currentUser?.uid || '',
+              cashierName: userProfile.displayName || '',
+              operator: momoOperator,
+              type: 'withdrawal',
+              amount: saleTotal,
+              commission: Math.round(saleTotal * 0.01 * 0.3),
+              feesPaid: Math.round(saleTotal * 0.01),
+              clientPhone: momoPhoneNumber,
+              clientName: selectedClient?.name || 'Client de passage',
+              referenceId: momoTransactionId || mobileTxRef.id,
+              status: 'completed',
+              notes: `Vente de caisse POS #${saleRef.id.slice(-6)}`,
+              countryCode: 'TG',
+              merchantNumber: momoOperator === 'tmoney' ? '90000000' : '99000000'
+            });
           }
 
           transaction.set(saleRef, saleData);
@@ -792,7 +1242,7 @@ export default function Pos() {
             id: saleId,
             date: new Date(),
             clientName: selectedClient?.name,
-            clientPhone: selectedClient?.phone,
+            clientPhone: selectedClient?.phone || momoPhoneNumber || undefined,
             clientMatricule: selectedClient?.matricule
           });
         });
@@ -806,7 +1256,82 @@ export default function Pos() {
       setLoadedOrderId(null);
       setLoadedOrderNumber(null);
     } catch (error) {
-       handleFirestoreError(error, OperationType.WRITE, 'checkout');
+      console.warn("Online checkout encountered a hurdle. Saving locally to Offline-First POS queue:", error);
+      try {
+        const fallbackId = 'offline_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+        const offlineSaleData: any = {
+          id: fallbackId,
+          storeId: userProfile.storeId,
+          timestamp: new Date().toISOString(),
+          cashierId: auth.currentUser?.uid || 'offline_cashier',
+          cashierName: userProfile?.displayName || 'Admin',
+          totalAmount: saleTotal,
+          discount: saleDiscount,
+          amountReceived: saleAmountReceived,
+          change: saleChange,
+          paymentMethod,
+          itemsCount: itemsToSave.length,
+          _isOfflineCreated: true,
+          items: itemsToSave.map(item => ({
+            productId: item.productId,
+            name: item.name,
+            quantity: item.quantity,
+            priceAtSale: item.priceAtSale,
+            total: item.total
+          }))
+        };
+
+        if (selectedClient) {
+          offlineSaleData.clientId = selectedClient.id || '';
+          offlineSaleData.clientName = selectedClient.name || '';
+          offlineSaleData.clientPhone = selectedClient.phone || '';
+          offlineSaleData.clientMatricule = selectedClient.matricule || '';
+        }
+
+        if (paymentMethod === 'mobile') {
+          offlineSaleData.momoOperator = momoOperator;
+          offlineSaleData.momoPhoneNumber = momoPhoneNumber;
+          offlineSaleData.momoTransactionId = momoTransactionId || `SIM-TX-${Math.floor(100000 + Math.random() * 900000)}`;
+          offlineSaleData.momoStatus = 'success';
+        }
+
+        const updatedQueue = [...offlineSales, offlineSaleData];
+        setOfflineSales(updatedQueue);
+        localStorage.setItem(`marketpro-offline-sales-${userProfile.storeId}`, JSON.stringify(updatedQueue));
+
+        setProducts(prev => {
+          const next = prev.map(p => {
+            const sold = itemsToSave.find(item => item.productId === p.id);
+            return sold ? { ...p, stock: Math.max(0, (p.stock || 0) - sold.quantity) } : p;
+          });
+          localStorage.setItem(`marketpro-products-${userProfile.storeId}`, JSON.stringify(next));
+          return next;
+        });
+
+        setLastSaleId(fallbackId);
+        setLastSaleData({
+          items: itemsToSave,
+          total: saleTotal,
+          discount: saleDiscount,
+          amountReceived: saleAmountReceived,
+          change: saleChange,
+          id: fallbackId,
+          date: new Date(),
+          clientName: selectedClient?.name,
+          clientPhone: selectedClient?.phone || momoPhoneNumber || undefined,
+          clientMatricule: selectedClient?.matricule
+        });
+
+        setCheckoutStep('receipt');
+        setCart([]);
+        setDiscount(0);
+        setAmountReceived(0);
+        setSelectedClient(null);
+        setLoadedOrderId(null);
+        setLoadedOrderNumber(null);
+      } catch (fallbackErr) {
+        handleFirestoreError(fallbackErr, OperationType.WRITE, 'checkout-fallback');
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -965,12 +1490,12 @@ export default function Pos() {
 
       {/* Cart Side */}
       <div id="cart-side-section" className="w-full lg:w-[480px] xl:w-[545px] flex flex-col bg-white rounded-[32px] border border-gray-100 shadow-lg shrink-0 overflow-hidden min-h-[450px] max-h-[85vh] lg:max-h-full lg:h-full transition-all">
-        <div className="p-6 bg-gray-900 text-white">
+        <div className="p-6 bg-gradient-to-r from-orange-600 to-amber-500 text-white">
           <div className="flex items-center gap-2 mb-2">
-            <ShoppingCart size={20} className="text-orange-500" />
+            <ShoppingCart size={20} className="text-white" />
             <h2 className="text-xl font-bold">Panier</h2>
           </div>
-          <p className="text-xs text-gray-400">{cart.length} articles sélectionnés</p>
+          <p className="text-xs text-orange-100">{cart.length} articles sélectionnés</p>
         </div>
 
         {loadedOrderNumber && (
@@ -1118,11 +1643,12 @@ export default function Pos() {
               initial={{ opacity: 0, y: 100, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 100, scale: 0.95 }}
-              className="relative bg-white w-full max-h-[92vh] sm:max-h-[88vh] sm:max-w-md sm:rounded-[28px] shadow-2xl overflow-hidden flex flex-col text-slate-800"
+              className="relative bg-white w-full md:max-w-4xl max-h-[95vh] md:max-h-[85vh] sm:rounded-[28px] shadow-2xl overflow-hidden flex flex-col text-slate-800"
             >
               {checkoutStep === 'cart' ? (
-                <div className="p-4 sm:p-5 flex flex-col overflow-y-auto max-h-full">
-                  <div className="flex justify-between items-center mb-3">
+                <div className="flex flex-col h-full overflow-hidden">
+                  {/* Header */}
+                  <div className="p-4 sm:p-5 pb-3 border-b border-gray-100 flex justify-between items-center shrink-0">
                     <div>
                       <h2 className="text-lg font-black text-gray-900 tracking-tight italic uppercase decoration-orange-500 decoration-2 underline-offset-4">RÈGLEMENT</h2>
                       <p className="text-[7.5px] uppercase font-black tracking-widest text-gray-400 mt-0.5">Étape finale</p>
@@ -1132,61 +1658,34 @@ export default function Pos() {
                     </button>
                   </div>
                   
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-3 gap-2">
-                         {[
-                           { id: 'cash', icon: Banknote, label: 'Cash' },
-                           { id: 'card', icon: CreditCard, label: 'Carte' },
-                           { id: 'mobile', icon: Smartphone, label: 'Mobile' }
-                         ].map(method => (
-                           <button
-                             key={method.id}
-                             onClick={() => setPaymentMethod(method.id as PaymentMethod)}
-                             className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 transition-all ${paymentMethod === method.id ? 'border-orange-500 bg-orange-50 text-orange-600 shadow-md shadow-orange-500/5' : 'border-gray-50 hover:border-gray-100 text-gray-400'}`}
-                           >
-                             <method.icon size={18} />
-                             <span className="text-[7.5px] font-black uppercase tracking-widest">{method.label}</span>
-                           </button>
-                         ))}
-                    </div>
-
-                    <div className="space-y-3">
-                      {/* Recu / Remise & Taxes Details */}
-                      <div className="bg-gray-50/80 p-3 rounded-xl border border-gray-100/80 space-y-1.5">
-                        <div className="flex justify-between items-center text-[11px] text-gray-500">
-                          <span className="font-medium text-gray-500">Sous-total</span>
-                          <span className="font-bold text-gray-900">{(subtotal || 0).toLocaleString('de-DE')} FCFA</span>
-                        </div>
-                        
-                        <div className="flex items-center justify-between gap-4 py-1 border-t border-b border-gray-100">
-                          <label className="text-[9px] font-black uppercase text-gray-400">Remise (FCFA)</label>
-                          <input 
-                            type="number"
-                            value={discount || ''}
-                            onChange={(e) => setDiscount(Number(e.target.value))}
-                            placeholder="0"
-                            className="w-24 bg-white border border-gray-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-200 rounded-md px-2 py-0.5 text-right font-black text-xs outline-none"
-                          />
-                        </div>
-
-                        <div className="flex justify-between items-center text-[11px] text-gray-500">
-                          <span className="font-medium text-gray-505">Taxes (0%)</span>
-                          <span className="font-bold text-gray-900">0 FCFA</span>
+                  {/* Landscape Grid body */}
+                  <div className="p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                    {/* Left Column: Payment Method & Dynamic inputs */}
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-[8px] font-black uppercase tracking-widest text-gray-400 block mb-2">Méthode de Paiement</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { id: 'cash', icon: Banknote, label: 'Cash' },
+                            { id: 'card', icon: CreditCard, label: 'Carte' },
+                            { id: 'mobile', icon: Smartphone, label: 'Mobile' }
+                          ].map(method => (
+                            <button
+                              key={method.id}
+                              onClick={() => setPaymentMethod(method.id as PaymentMethod)}
+                              className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 transition-all ${paymentMethod === method.id ? 'border-orange-500 bg-orange-50 text-orange-600 shadow-md shadow-orange-50/5' : 'border-gray-50 hover:border-gray-100 text-gray-400'}`}
+                            >
+                              <method.icon size={18} />
+                              <span className="text-[7.5px] font-black uppercase tracking-widest">{method.label}</span>
+                            </button>
+                          ))}
                         </div>
                       </div>
 
-                      <div className="bg-gray-900 py-3 px-4 rounded-xl text-white shadow-lg relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-16 h-16 bg-white/5 -mr-8 -mt-8 rounded-full" />
-                        <div className="relative">
-                          <p className="text-[7.5px] font-black uppercase tracking-[0.3em] opacity-40 mb-0.5 font-sans">Total à payer</p>
-                          <p className="text-xl font-black italic">{(total || 0).toLocaleString('de-DE')} <span className="text-[8px] opacity-40 font-mono">FCFA</span></p>
-                        </div>
-                      </div>
-                      
                       {paymentMethod === 'cash' && (
                         <motion.div 
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
                           className="space-y-2.5"
                         >
                           <div className="space-y-1">
@@ -1212,100 +1711,316 @@ export default function Pos() {
                           </div>
                         </motion.div>
                       )}
-                    </div>
-                  </div>
 
-                  <div className="pt-3 mt-4 flex gap-2.5">
-                    <button 
-                      onClick={() => setIsCheckoutOpen(false)}
-                      className="flex-1 py-2.5 bg-gray-100 text-gray-500 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-200 transition-all"
-                    >
-                      Annuler
-                    </button>
-                    <button 
-                      onClick={handleCheckout}
-                      disabled={isProcessing || (paymentMethod === 'cash' && amountReceived < total)}
-                      className="flex-[2] py-2.5 bg-orange-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
-                    >
-                      {isProcessing ? (
-                        <Loader2 className="animate-spin" size={14} />
-                      ) : (
-                        <>
-                          <Check size={14} />
-                          Encaisser
-                        </>
+                      {paymentMethod === 'mobile' && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="space-y-3 p-3 bg-gray-50 rounded-xl border border-gray-100"
+                        >
+                          <div className="flex justify-between items-center pb-1.5 border-b border-gray-100">
+                            <span className="text-[8px] font-black uppercase tracking-wider text-gray-400">Opérateur Togo</span>
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setMomoOperator('tmoney')}
+                                className={`px-2.5 py-1 rounded-lg font-black text-[9px] uppercase transition-all ${momoOperator === 'tmoney' ? 'bg-amber-500 text-white shadow-sm' : 'bg-white text-gray-400 border border-gray-150'}`}
+                              >
+                                T-Money
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setMomoOperator('flooz')}
+                                className={`px-2.5 py-1 rounded-lg font-black text-[9px] uppercase transition-all ${momoOperator === 'flooz' ? 'bg-teal-600 text-white shadow-sm' : 'bg-white text-gray-400 border border-gray-150'}`}
+                              >
+                                Flooz
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[7.5px] font-black uppercase tracking-widest text-gray-400">Téléphone de l'expéditeur</label>
+                            <input 
+                              type="text"
+                              value={momoPhoneNumber}
+                              onChange={(e) => setMomoPhoneNumber(e.target.value)}
+                              placeholder="Ex: 90123456"
+                              className="w-full bg-white border border-gray-200 focus:ring-2 focus:ring-orange-200 rounded-xl py-2 px-3 text-xs font-bold outline-none text-gray-900"
+                            />
+                          </div>
+
+                          {/* USSD Instruction Panel */}
+                          <div className="bg-white p-2 rounded-lg border border-gray-150 space-y-1 text-center">
+                            <p className="text-[7px] font-black text-gray-400 uppercase tracking-wider">Dialer Code (Dial/USSD)</p>
+                            <div className="flex items-center justify-center gap-1.5 bg-gray-50 py-1 px-2 rounded font-mono text-[10px] font-black text-slate-800">
+                              <span>
+                                {momoOperator === 'tmoney' 
+                                  ? `*145*2*${total}*90000000#` 
+                                  : `*155*2*1*99000000*${total}#`}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const code = momoOperator === 'tmoney' 
+                                    ? `*145*2*${total}*90000000#` 
+                                    : `*155*2*1*99000000*${total}#`;
+                                  navigator.clipboard.writeText(code);
+                                }}
+                                className="text-[8px] px-1 py-0.5 bg-orange-100 hover:bg-orange-200 text-orange-600 rounded transition-all uppercase font-sans font-bold"
+                              >
+                                Copier
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Momo push simulator */}
+                          <div className="space-y-1.5">
+                            {momoStatus === 'none' && (
+                              <button
+                                type="button"
+                                onClick={startMomoPaymentSimulation}
+                                className="w-full py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-xl text-[9px] font-black uppercase tracking-wider shadow-md shadow-orange-500/10 flex items-center justify-center gap-1"
+                              >
+                                <Smartphone size={12} />
+                                Déclencher le paiement push (Simulé)
+                              </button>
+                            )}
+
+                            {momoStatus === 'simulating' && (
+                              <div className="w-full py-2 bg-gray-100 text-gray-400 rounded-xl text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5">
+                                <Loader2 className="animate-spin text-orange-500" size={12} />
+                                Attente du SMS de confirmation...
+                              </div>
+                            )}
+
+                            {momoStatus === 'success' && (
+                              <div className="p-2.5 bg-green-50 border border-green-150 rounded-xl space-y-1">
+                                <div className="flex items-center gap-1.5 text-green-700 font-black text-[9px] uppercase tracking-wider">
+                                  <span className="w-2 h-2 bg-green-500 rounded-full animate-ping" />
+                                  Paiement Reçu avec Succès
+                                </div>
+                                <p className="text-[8px] font-mono text-green-600">
+                                  Réf TX: <span className="font-bold">{momoTransactionId}</span>
+                                </p>
+                              </div>
+                            )}
+
+                            {momoError && (
+                              <p className="text-[8px] text-red-500 font-black">{momoError}</p>
+                            )}
+                          </div>
+                        </motion.div>
                       )}
-                    </button>
+                    </div>
+
+                    {/* Right Column: Recap & Totals & Submit */}
+                    <div className="flex flex-col justify-between space-y-4">
+                      <div className="space-y-3">
+                        <label className="text-[8px] font-black uppercase tracking-widest text-gray-400 block">Détails de la vente</label>
+                        {/* Recu / Remise & Taxes Details */}
+                        <div className="bg-gray-50/80 p-3 rounded-xl border border-gray-100/80 space-y-1.5">
+                          <div className="flex justify-between items-center text-[11px] text-gray-500">
+                            <span className="font-medium text-gray-500">Sous-total</span>
+                            <span className="font-bold text-gray-900">{(subtotal || 0).toLocaleString('de-DE')} FCFA</span>
+                          </div>
+                          
+                          <div className="flex items-center justify-between gap-4 py-1 border-t border-b border-gray-100">
+                            <label className="text-[9px] font-black uppercase text-gray-400">Remise (FCFA)</label>
+                            <input 
+                              type="number"
+                              value={discount || ''}
+                              onChange={(e) => setDiscount(Number(e.target.value))}
+                              placeholder="0"
+                              className="w-24 bg-white border border-gray-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-200 rounded-md px-2 py-0.5 text-right font-black text-xs outline-none"
+                            />
+                          </div>
+
+                          <div className="flex justify-between items-center text-[11px] text-gray-500">
+                            <span className="font-medium text-gray-505">Taxes (0%)</span>
+                            <span className="font-bold text-gray-900">0 FCFA</span>
+                          </div>
+                        </div>
+
+                        <div className="bg-gray-900 py-3 px-4 rounded-xl text-white shadow-lg relative overflow-hidden">
+                          <div className="absolute top-0 right-0 w-16 h-16 bg-white/5 -mr-8 -mt-8 rounded-full" />
+                          <div className="relative">
+                            <p className="text-[7.5px] font-black uppercase tracking-[0.3em] opacity-40 mb-0.5 font-sans">Total à payer</p>
+                            <p className="text-xl font-black italic">{(total || 0).toLocaleString('de-DE')} <span className="text-[8px] opacity-40 font-mono">FCFA</span></p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-3 border-t border-gray-100 flex gap-2.5">
+                        <button 
+                          onClick={() => setIsCheckoutOpen(false)}
+                          className="flex-1 py-2.5 bg-gray-100 text-gray-500 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-200 transition-all"
+                        >
+                          Annuler
+                        </button>
+                        <button 
+                          onClick={handleCheckout}
+                          disabled={isProcessing || (paymentMethod === 'cash' && amountReceived < total) || (paymentMethod === 'mobile' && momoStatus !== 'success')}
+                          className="flex-[2] py-2.5 bg-orange-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                        >
+                          {isProcessing ? (
+                            <Loader2 className="animate-spin" size={14} />
+                          ) : (
+                            <>
+                              <Check size={14} />
+                              {paymentMethod === 'mobile' ? 'Confirmer encaissement' : 'Encaisser'}
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : (
-                <div className="p-4 sm:p-5 text-center flex flex-col h-full overflow-y-auto max-h-full bg-gray-900 text-white">
-                  <div className="flex-1 flex flex-col items-center justify-center py-2">
-                    <motion.div 
-                      initial={{ scale: 0.5, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      className="w-12 h-12 bg-green-500 text-white rounded-[16px] flex items-center justify-center mb-3 shadow-xl shadow-green-500/30 transform rotate-6 animate-pulse"
-                    >
-                      <Check size={26} className="stroke-[3]" />
-                    </motion.div>
-                    <h2 className="text-xl font-black mb-1 tracking-tight italic uppercase decoration-green-500 decoration-4 underline-offset-4">Terminé !</h2>
-                    <p className="text-white/40 font-bold text-[8px] uppercase tracking-widest mb-4">Transaction #{lastSaleId.slice(-8).toUpperCase()}</p>
-                    
-                    <div className="grid grid-cols-2 gap-2 w-full mb-2.5">
-                      <button 
-                        onClick={handlePrint}
-                        className="flex flex-col items-center justify-center gap-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black uppercase tracking-widest text-[8px] transition-all border border-white/5"
-                        title="Imprimer un reçu physique"
-                      >
-                        <Printer size={14} className="text-orange-500" />
-                        <span>Imprimer</span>
-                      </button>
-                      
-                      <button 
-                        onClick={handleDownloadPDF}
-                        className="flex flex-col items-center justify-center gap-1 py-2 bg-white text-gray-900 rounded-xl font-black uppercase tracking-widest text-[8px] transition-all hover:bg-gray-100 shadow-xl"
-                        title="Télécharger le fichier PDF"
-                      >
-                        <FileDown size={14} className="text-blue-600" />
-                        <span>Télécharger</span>
-                      </button>
-
-                      <button 
-                        onClick={handleOpenPDFInNewTab}
-                        className="flex flex-col items-center justify-center gap-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black uppercase tracking-widest text-[8px] transition-all border border-white/5"
-                        title="Ouvrir le reçu dans un nouvel onglet"
-                      >
-                        <ExternalLink size={14} className="text-amber-500" />
-                        <span>Aperçu PDF</span>
-                      </button>
-
-                      <button 
-                        onClick={handleSharePDF}
-                        className="flex flex-col items-center justify-center gap-1 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black uppercase tracking-widest text-[8px] transition-all border border-white/5"
-                        title="Partager le reçu via le canevas de partage natif ou copie-presse"
-                      >
-                        <Share2 size={14} className="text-purple-400" />
-                        <span>Partager</span>
-                      </button>
+                <div className="flex flex-col h-full overflow-hidden">
+                  {/* Header */}
+                  <div className="p-4 sm:p-5 pb-3 border-b border-gray-100 flex justify-between items-center shrink-0">
+                    <div>
+                      <h2 className="text-lg font-black text-gray-900 tracking-tight italic uppercase decoration-orange-500 decoration-2 underline-offset-4">VENTE REUSSIE</h2>
+                      <p className="text-[7.5px] uppercase font-black tracking-widest text-gray-400 mt-0.5">Confirmation & Reçus</p>
                     </div>
-
-                    {lastSaleData?.clientPhone && (
-                      <button 
-                         onClick={handleWhatsAppShare}
-                         className="w-full flex items-center justify-center gap-1.5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest text-[8px] transition-all shadow-xl shadow-emerald-500/20"
-                      >
-                        <MessageSquare size={12} />
-                        Envoyer par WhatsApp
-                      </button>
-                    )}
                   </div>
                   
-                  <button 
-                    onClick={() => { setIsCheckoutOpen(false); setCheckoutStep('cart'); }}
-                    className="w-full py-3 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white rounded-xl font-black uppercase tracking-widest text-[9px] transition-all border border-white/2 font-sans mt-3"
-                  >
-                    Vente Suivante
-                  </button>
+                  {/* Landscape Grid success body */}
+                  <div className="p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                    {/* Left Column: Congratulations & Document Controls */}
+                    <div className="flex flex-col items-center justify-center text-center p-4 bg-gray-50/50 rounded-2xl border border-gray-100">
+                      <motion.div 
+                        initial={{ scale: 0.5, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="w-12 h-12 bg-green-500 text-white rounded-[16px] flex items-center justify-center mb-3 shadow-xl shadow-green-500/20 transform rotate-6"
+                      >
+                        <Check size={26} className="stroke-[3]" />
+                      </motion.div>
+                      <h2 className="text-xl font-black mb-1 tracking-tight italic uppercase text-slate-900">Terminé !</h2>
+                      <p className="text-gray-400 font-bold text-[8px] uppercase tracking-widest mb-4">Transaction #{lastSaleId.slice(-8).toUpperCase()}</p>
+                      
+                      <div className="grid grid-cols-2 gap-2 w-full">
+                        <button 
+                          onClick={handlePrint}
+                          className="flex flex-col items-center justify-center gap-1 py-2 bg-gray-50 hover:bg-gray-100 text-slate-900 rounded-xl font-black uppercase tracking-widest text-[8px] transition-all border border-gray-200 shadow-sm"
+                          title="Imprimer un reçu physique"
+                        >
+                          <Printer size={14} className="text-orange-500" />
+                          <span>Imprimer</span>
+                        </button>
+                        
+                        <button 
+                          onClick={handleDownloadPDF}
+                          className="flex flex-col items-center justify-center gap-1 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-black uppercase tracking-widest text-[8px] transition-all shadow-md shadow-orange-500/10"
+                          title="Télécharger le fichier PDF"
+                        >
+                          <FileDown size={14} className="text-white" />
+                          <span>Télécharger</span>
+                        </button>
+   
+                        <button 
+                          onClick={handleOpenPDFInNewTab}
+                          className="flex flex-col items-center justify-center gap-1 py-2 bg-gray-50 hover:bg-gray-100 text-slate-900 rounded-xl font-black uppercase tracking-widest text-[8px] transition-all border border-gray-200 shadow-sm"
+                          title="Ouvrir le reçu dans un nouvel onglet"
+                        >
+                          <ExternalLink size={14} className="text-amber-500" />
+                          <span>Aperçu PDF</span>
+                        </button>
+   
+                        <button 
+                          onClick={handleSharePDF}
+                          className="flex flex-col items-center justify-center gap-1 py-2 bg-gray-50 hover:bg-gray-100 text-slate-900 rounded-xl font-black uppercase tracking-widest text-[8px] transition-all border border-gray-200 shadow-sm"
+                          title="Partager le reçu via le canevas de partage natif ou copie-presse"
+                        >
+                          <Share2 size={14} className="text-purple-500" />
+                          <span>Partager</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Right Column: Thermal Printing & Digital Receipt & Action button */}
+                    <div className="flex flex-col justify-between space-y-4">
+                      <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-150 space-y-3 text-left">
+                        <div>
+                          <h4 className="text-[9px] font-black uppercase tracking-widest text-orange-600 mb-1.5 flex items-center gap-1.5">
+                            <Printer size={10} />
+                            Impression Thermique Directe
+                          </h4>
+                          {!btCharacteristic ? (
+                            <button
+                              type="button"
+                              onClick={connectBluetoothPrinter}
+                              disabled={isBtConnecting}
+                              className="w-full py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-600/50 text-white text-[8px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5"
+                            >
+                              {isBtConnecting ? (
+                                <Loader2 size={12} className="animate-spin" />
+                              ) : (
+                                <Printer size={12} />
+                              )}
+                              Connecter Imprimante ESC/POS (Bluetooth)
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={printDirectThermal}
+                              disabled={isBtPrinting}
+                              className="w-full py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 disabled:opacity-50 text-white text-[8px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md shadow-green-500/10"
+                            >
+                              {isBtPrinting ? (
+                                <Loader2 size={12} className="animate-spin" />
+                              ) : (
+                                <Printer size={12} />
+                              )}
+                              Imprimer Ticket Thermique (ESC/POS)
+                            </button>
+                          )}
+                          {btError && <p className="text-[7.5px] text-red-500 mt-1 font-semibold">{btError}</p>}
+                        </div>
+   
+                        <div className="border-t border-gray-200 pt-3">
+                          <h4 className="text-[9px] font-black uppercase tracking-widest text-orange-600 mb-2 flex items-center gap-1.5">
+                            <MessageSquare size={10} />
+                            Reçu Numérique (WhatsApp / SMS)
+                          </h4>
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={sharePhoneNumber}
+                              onChange={(e) => setSharePhoneNumber(e.target.value)}
+                              placeholder="Ex: +22890123456"
+                              className="w-full bg-white border border-gray-200 rounded-xl py-2 px-3 text-xs font-bold outline-none text-gray-900 focus:border-orange-500 focus:ring-1 focus:ring-orange-200"
+                            />
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleWhatsAppReceipt()}
+                                className="py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-[8px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                              >
+                                <MessageSquare size={12} />
+                                WhatsApp
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSMSReceipt()}
+                                className="py-2 bg-blue-500 hover:bg-blue-600 text-white text-[8px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                              >
+                                <Smartphone size={12} />
+                                SMS Direct
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button 
+                        onClick={() => { setIsCheckoutOpen(false); setCheckoutStep('cart'); }}
+                        className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-black uppercase tracking-widest text-[9px] transition-all shadow-md font-sans shrink-0"
+                      >
+                        Terminer (Vente Suivante)
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </motion.div>
@@ -1489,9 +2204,7 @@ export default function Pos() {
       {lastSaleData && (
         <>
           <div className="text-center mb-2">
-            {storeSettings?.logoUrl && (
-              <img src={storeSettings.logoUrl} alt="Logo" className="w-12 h-12 mx-auto mb-2 object-contain" />
-            )}
+            <img src={storeSettings?.logoUrl || defaultLogo} alt="Logo" className="w-12 h-12 mx-auto mb-2 object-contain" />
             <h1 className="text-sm font-bold uppercase tracking-widest">{storeSettings?.name || 'SUPERMARKET PRO'}</h1>
             <p className="text-[8px] italic">{storeSettings?.address || 'Dakar, Sénégal'}</p>
             <p className="text-[8px]">Tel: {storeSettings?.phone || '+221 33 000 00 00'}</p>

@@ -3,7 +3,7 @@ export const translations = {
   fr: {
     dashboard: "Tableau de Bord",
     pos: "Point de Vente",
-    inventory: "Inventaire",
+    inventory: "Stock & Inventaire",
     history: "Journal de caisse",
     accounting: "Comptabilité",
     settings: "Paramètres",
@@ -49,7 +49,7 @@ export const translations = {
   en: {
     dashboard: "Dashboard",
     pos: "Point of Sale",
-    inventory: "Inventory",
+    inventory: "Stock & Inventory",
     history: "Cash Journal",
     accounting: "Accounting",
     settings: "Settings",

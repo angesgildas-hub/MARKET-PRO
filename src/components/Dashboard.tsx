@@ -570,7 +570,7 @@ export default function Dashboard() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="flex items-center gap-1.5 px-3 py-1 bg-green-50 text-green-700 rounded-full text-[10px] font-black uppercase tracking-widest border border-green-200/50">
               <ShieldCheck size={12} className="text-green-600 shrink-0" />
-              <span>G-Tech Cloud Certifié</span>
+              <span>G-lab Tech Cloud Certifié</span>
             </span>
             <span className="flex items-center gap-1 px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-[10px] font-mono">
               <Clock size={11} className="text-slate-500 shrink-0" />

@@ -281,7 +281,11 @@ export default function Clients() {
     } catch (error: any) {
       setLoading(false);
       console.error("Google Import Error:", error);
-      if (error.code === 'auth/popup-blocked') {
+      if (error.code === 'auth/network-request-failed' || (error.message && error.message.includes('network-request-failed'))) {
+        alert("L'importation des contacts Google a échoué (Erreur réseau/iframe).\n\n" +
+              "Ce problème se produit car l'application s'exécute dans un iframe de prévisualisation (comme celle d'AI Studio) qui restreint l'accès aux cookies tiers et aux pop-ups.\n\n" +
+              "Pour utiliser cette fonctionnalité, veuillez ouvrir l'application dans un nouvel onglet complet à l'aide de l'icône de redirection en haut à droite.");
+      } else if (error.code === 'auth/popup-blocked') {
         alert("Veuillez autoriser les popups pour vous connecter à Google.");
       } else {
         alert(`${error.message || "Erreur lors de l'importation. Assurez-vous d'avoir autorisé l'accès en lecture aux contacts."}`);
